@@ -16,6 +16,7 @@ import {
   Wallet,
   PlusCircle,
   Search,
+  ExternalLink,
 } from 'lucide-react';
 import { ConnectionStatus, ScratcherTicket, WalletAccount } from '../types';
 import { ScratchCard } from './ScratchCard';
@@ -26,6 +27,7 @@ import {
   saveScratchersForAddress,
   addManualScratcherForAddress,
   getSavedScratchersForAddress,
+  fetchRealBalances,
 } from '../services/walletService';
 
 interface ScratcherDashboardProps {
@@ -35,6 +37,8 @@ interface ScratcherDashboardProps {
   onConnectClick: () => void;
   onSwitchNetworkClick: () => void;
   onRetryClick: () => void;
+  onUpdateAccountBalance?: (matic: string, verse: string) => void;
+  onNotify?: (title: string, message: string, verseAmount?: number, txHash?: string) => void;
 }
 
 export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
@@ -44,35 +48,45 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
   onConnectClick,
   onSwitchNetworkClick,
   onRetryClick,
+  onUpdateAccountBalance,
+  onNotify,
 }) => {
   const [tickets, setTickets] = useState<ScratcherTicket[]>([]);
   const [isLoadingNFTs, setIsLoadingNFTs] = useState<boolean>(false);
+  const [isRefreshingBalance, setIsRefreshingBalance] = useState<boolean>(false);
   const [activeFilter, setActiveFilter] = useState<'all' | 'unscratched' | 'scratched' | 'claimed'>('all');
   const [selectedTicketForClaim, setSelectedTicketForClaim] = useState<ScratcherTicket | null>(null);
   const [isBatchClaimOpen, setIsBatchClaimOpen] = useState(false);
   const [customTokenInput, setCustomTokenInput] = useState('');
   const [showImportForm, setShowImportForm] = useState(false);
 
-  // Fetch real NFTs for connected Polygon address
+  // Fetch real NFTs and real balances for connected Polygon address
   useEffect(() => {
     let isMounted = true;
 
-    async function loadNFTs() {
+    async function loadWalletData() {
       if (account?.address) {
         setIsLoadingNFTs(true);
-        // First load any locally saved cache for instant UI
+        // Load locally saved cache for instant UI
         const saved = getSavedScratchersForAddress(account.address);
         if (saved && saved.length > 0) {
           setTickets(saved);
         }
 
         try {
-          const realTickets = await fetchRealScratchersForAddress(account.address);
+          const [realTickets, balances] = await Promise.all([
+            fetchRealScratchersForAddress(account.address),
+            fetchRealBalances(account.address),
+          ]);
+
           if (isMounted) {
             setTickets(realTickets);
+            if (onUpdateAccountBalance) {
+              onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
+            }
           }
         } catch (e) {
-          console.warn('NFT load failed', e);
+          console.warn('Wallet load failed', e);
         } finally {
           if (isMounted) {
             setIsLoadingNFTs(false);
@@ -83,20 +97,43 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       }
     }
 
-    loadNFTs();
+    loadWalletData();
+
+    // Auto-refresh balances every 15 seconds to keep data live
+    const interval = setInterval(async () => {
+      if (account?.address && onUpdateAccountBalance) {
+        try {
+          const balances = await fetchRealBalances(account.address);
+          onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
+        } catch (e) {}
+      }
+    }, 15000);
 
     return () => {
       isMounted = false;
+      clearInterval(interval);
     };
   }, [account?.address]);
 
-  const handleRefreshNFTs = async () => {
+  // Refresh Balance & NFTs handler
+  const handleRefreshAll = async () => {
     if (!account?.address) return;
+    setIsRefreshingBalance(true);
     setIsLoadingNFTs(true);
     try {
-      const real = await fetchRealScratchersForAddress(account.address);
-      setTickets(real);
+      const [realTickets, balances] = await Promise.all([
+        fetchRealScratchersForAddress(account.address),
+        fetchRealBalances(account.address),
+      ]);
+      setTickets(realTickets);
+      if (onUpdateAccountBalance) {
+        onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
+      }
+      if (onNotify) {
+        onNotify('Balance Refreshed', `Synced on-chain balances with Polygon.`);
+      }
     } finally {
+      setIsRefreshingBalance(false);
       setIsLoadingNFTs(false);
     }
   };
@@ -111,6 +148,10 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
     setTickets(updated);
     setCustomTokenInput('');
     setShowImportForm(false);
+
+    if (onNotify) {
+      onNotify('Verse Scratcher Added', `Loaded Token #${id} for your wallet.`);
+    }
   };
 
   const handleScratchComplete = (ticketId: string) => {
@@ -132,22 +173,47 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
   };
 
   const handleClaimSuccess = (claimedTicketIds: string[], txHash: string) => {
+    let totalClaimedVerse = 0;
+
     setTickets((prev) => {
-      const updated = prev.map((t) =>
-        claimedTicketIds.includes(t.id)
-          ? {
-              ...t,
-              status: 'claimed' as const,
-              claimTxHash: txHash,
-              claimTimestamp: new Date().toISOString(),
-            }
-          : t
-      );
+      const updated = prev.map((t) => {
+        if (claimedTicketIds.includes(t.id)) {
+          totalClaimedVerse += t.totalVerseValue;
+          return {
+            ...t,
+            status: 'claimed' as const,
+            claimTxHash: txHash,
+            claimTimestamp: new Date().toISOString(),
+          };
+        }
+        return t;
+      });
       if (account?.address) {
         saveScratchersForAddress(account.address, updated);
       }
       return updated;
     });
+
+    // Notify user with popup toast
+    if (onNotify) {
+      onNotify(
+        'Rewards Successfully Claimed!',
+        `Your Polygon transaction was confirmed. Tokens credited to ${account?.address ? account.address.slice(0, 6) + '...' + account.address.slice(-4) : 'your wallet'}.`,
+        totalClaimedVerse,
+        txHash
+      );
+    }
+
+    // Refresh real balances immediately after claiming
+    if (account?.address) {
+      setTimeout(async () => {
+        const balances = await fetchRealBalances(account.address);
+        if (onUpdateAccountBalance) {
+          onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
+        }
+      }, 1000);
+    }
+
     setSelectedTicketForClaim(null);
     setIsBatchClaimOpen(false);
   };
@@ -328,7 +394,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </p>
             </div>
 
-            <div className="p-6 rounded-3xl bg-[#080C1A] border border-slate-800 space-y-2.5">
+            <div className="p-6 rounded-3xl bg-[#080C1A] border border-emerald-500/10 border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
                 3
               </div>
@@ -363,12 +429,12 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             <div className="flex flex-wrap items-center gap-2.5">
               <button
                 id="refresh-nfts-btn"
-                onClick={handleRefreshNFTs}
-                disabled={isLoadingNFTs}
+                onClick={handleRefreshAll}
+                disabled={isLoadingNFTs || isRefreshingBalance}
                 className="px-3.5 py-2.5 bg-[#0D1426] hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
               >
-                <RefreshCw size={14} className={isLoadingNFTs ? 'animate-spin text-[#00E5FF]' : ''} />
-                <span>{isLoadingNFTs ? 'Scanning Polygon...' : 'Refresh Wallet'}</span>
+                <RefreshCw size={14} className={isLoadingNFTs || isRefreshingBalance ? 'animate-spin text-[#00E5FF]' : ''} />
+                <span>{isLoadingNFTs ? 'Syncing Polygon...' : 'Refresh Balance & NFTs'}</span>
               </button>
 
               {unscratchedCount > 0 && (
@@ -395,41 +461,66 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             </div>
           </div>
 
-          {/* Stats Cards with Verse Logo Colors */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-5 rounded-3xl bg-[#080C1A] border border-slate-800 space-y-1">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Layers size={14} className="text-[#00E5FF]" />
-                NFTs in Connected Address
-              </span>
-              <div className="text-2xl font-black text-white">{tickets.length} Tickets</div>
-              <span className="text-[11px] text-slate-500">Polygon ERC-721 Scratchers</span>
+          {/* Real On-Chain Wallet Balance Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Real VERSE Balance */}
+            <div className="p-5 rounded-3xl bg-[#080C1A] border border-cyan-500/40 space-y-1 relative overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.1)]">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-[#00E5FF]">
+                  <VerseCoinLogo size={16} />
+                  Live VERSE Balance
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Live syncing" />
+              </div>
+              <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
+                <span>{account.balanceVerse || '0'}</span>
+                <span className="text-xs font-black text-[#00E5FF]">VERSE</span>
+              </div>
+              <span className="text-[11px] text-slate-400">On-Chain Polygon Balance</span>
             </div>
 
-            <div className="p-5 rounded-3xl bg-[#080C1A] border border-cyan-500/40 space-y-1 shadow-[0_0_20px_rgba(0,229,255,0.1)]">
-              <span className="text-xs font-bold text-[#00E5FF] uppercase tracking-wider flex items-center gap-1.5">
+            {/* Real MATIC / POL Gas Balance */}
+            <div className="p-5 rounded-3xl bg-[#080C1A] border border-purple-500/40 space-y-1">
+              <div className="flex items-center justify-between text-slate-400">
+                <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-purple-300">
+                  <Coins size={14} />
+                  Live POL / Gas
+                </span>
+                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+              </div>
+              <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
+                <span>{account.balanceMatic || '0.0000'}</span>
+                <span className="text-xs font-bold text-purple-300">POL</span>
+              </div>
+              <span className="text-[11px] text-slate-400">For Polygon Gas Fees</span>
+            </div>
+
+            {/* Unclaimed Rewards */}
+            <div className="p-5 rounded-3xl bg-[#080C1A] border border-slate-800 space-y-1">
+              <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
                 <Trophy size={14} />
                 Unclaimed Rewards
               </span>
-              <div className="text-2xl font-black text-white flex items-baseline gap-1.5">
+              <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
                 <span>{readyVerseValue.toLocaleString()}</span>
-                <span className="text-xs font-black text-[#00E5FF]">VERSE</span>
+                <span className="text-xs font-black text-amber-300">VERSE</span>
               </div>
-              <span className="text-[11px] text-purple-300 font-semibold">
-                {readyMaticValue > 0 ? `+ ${readyMaticValue} POL Bonus` : 'Ready to claim'}
+              <span className="text-[11px] text-slate-400">
+                {readyMaticValue > 0 ? `+ ${readyMaticValue} POL Bonus` : `${readyToClaimTickets.length} ready to claim`}
               </span>
             </div>
 
+            {/* Claimed Rewards */}
             <div className="p-5 rounded-3xl bg-[#080C1A] border border-slate-800 space-y-1">
               <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                 <CheckCircle2 size={14} />
                 Claimed Rewards
               </span>
-              <div className="text-2xl font-black text-white flex items-baseline gap-1.5">
+              <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
                 <span>{totalClaimedVerse.toLocaleString()}</span>
                 <span className="text-xs font-black text-emerald-400">VERSE</span>
               </div>
-              <span className="text-[11px] text-slate-500">Transferred to your wallet</span>
+              <span className="text-[11px] text-slate-400">{claimedCount} NFTs claimed on-chain</span>
             </div>
           </div>
 
@@ -454,7 +545,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Unclaimed ({unscratchedCount})
+                Unscratched ({unscratchedCount})
               </button>
               <button
                 onClick={() => setActiveFilter('scratched')}
@@ -484,7 +575,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               className="text-xs font-bold text-slate-400 hover:text-cyan-300 flex items-center gap-1.5 cursor-pointer"
             >
               <PlusCircle size={14} />
-              <span>{showImportForm ? 'Close Token Check' : 'Check Specific Token ID'}</span>
+              <span>{showImportForm ? 'Close Token Check' : 'Check / Add Specific Token ID'}</span>
             </button>
           </div>
 
@@ -551,7 +642,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </p>
               <div className="pt-2 flex flex-wrap justify-center gap-3">
                 <button
-                  onClick={handleRefreshNFTs}
+                  onClick={handleRefreshAll}
                   className="px-5 py-2.5 bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs rounded-xl shadow cursor-pointer transition-all active:scale-95"
                 >
                   RE-SCAN POLYGON
@@ -568,7 +659,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
         </div>
       )}
 
-      {/* Real Claim Modal */}
+      {/* Real Claim Modal with Wallet Signing */}
       {(selectedTicketForClaim || isBatchClaimOpen) && account && (
         <ClaimModal
           ticket={selectedTicketForClaim}

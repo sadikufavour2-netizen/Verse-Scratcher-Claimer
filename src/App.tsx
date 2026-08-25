@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { ConnectionStatus, WalletAccount, POLYGON_MAINNET } from './types';
 import { switchToPolygon, disconnectWallet } from './services/walletService';
 import { WalletErrorBoundary } from './components/WalletErrorBoundary';
 import { Navbar } from './components/Navbar';
 import { ScratcherDashboard } from './components/ScratcherDashboard';
 import { WalletConnectModal } from './components/WalletConnectModal';
+import { NotificationToast, ToastNotification } from './components/NotificationToast';
 
 export default function App() {
   // Safe initial React state - Zero WalletConnect execution on initial mount
@@ -17,11 +18,36 @@ export default function App() {
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [notifications, setNotifications] = useState<ToastNotification[]>([]);
 
   // Triggered ONLY after explicit user click on "CONNECT WALLET"
   const handleOpenConnect = () => {
     setIsModalOpen(true);
     setErrorMessage(null);
+  };
+
+  // Toast notification dispatcher
+  const handleNotify = useCallback((title: string, message: string, verseAmount?: number, txHash?: string) => {
+    const id = `toast-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const newToast: ToastNotification = {
+      id,
+      type: verseAmount ? 'claim_success' : 'info',
+      title,
+      message,
+      verseAmount,
+      txHash,
+    };
+
+    setNotifications((prev) => [...prev, newToast]);
+
+    // Auto-dismiss after 6.5 seconds
+    setTimeout(() => {
+      setNotifications((prev) => prev.filter((t) => t.id !== id));
+    }, 6500);
+  }, []);
+
+  const handleDismissNotification = (id: string) => {
+    setNotifications((prev) => prev.filter((t) => t.id !== id));
   };
 
   // Called when wallet connects successfully
@@ -33,10 +59,24 @@ export default function App() {
     if (connectedAccount.chainId === POLYGON_MAINNET.chainId) {
       setConnectionStatus('CONNECTED');
       setErrorMessage(null);
+      handleNotify('Wallet Connected', `Connected to Polygon Mainnet (${connectedAccount.address.slice(0, 6)}...${connectedAccount.address.slice(-4)})`);
     } else {
       setConnectionStatus('WRONG_NETWORK');
       setErrorMessage('Please switch your wallet to Polygon.');
     }
+  };
+
+  // Update account balance dynamically
+  const handleUpdateAccountBalance = (matic: string, verse: string) => {
+    setAccount((prev) => {
+      if (!prev) return null;
+      if (prev.balanceMatic === matic && prev.balanceVerse === verse) return prev;
+      return {
+        ...prev,
+        balanceMatic: matic,
+        balanceVerse: verse,
+      };
+    });
   };
 
   // Called if wallet connection fails
@@ -55,6 +95,7 @@ export default function App() {
       setAccount((prev) => (prev ? { ...prev, chainId: POLYGON_MAINNET.chainId } : null));
       setConnectionStatus('CONNECTED');
       setErrorMessage(null);
+      handleNotify('Network Switched', 'Successfully connected to Polygon Mainnet.');
     } else {
       setConnectionStatus('WRONG_NETWORK');
       setErrorMessage(res.error || 'Please switch your wallet to Polygon.');
@@ -67,6 +108,7 @@ export default function App() {
     setAccount(null);
     setConnectionStatus('DISCONNECTED');
     setErrorMessage(null);
+    handleNotify('Wallet Disconnected', 'You have disconnected your Polygon wallet.');
   };
 
   // Switch / Connect another account handler
@@ -104,8 +146,16 @@ export default function App() {
             onConnectClick={handleOpenConnect}
             onSwitchNetworkClick={handleSwitchNetwork}
             onRetryClick={handleRetry}
+            onUpdateAccountBalance={handleUpdateAccountBalance}
+            onNotify={handleNotify}
           />
         </main>
+
+        {/* Toast Notifications */}
+        <NotificationToast
+          notifications={notifications}
+          onDismiss={handleDismissNotification}
+        />
 
         {/* Lazy Loaded Wallet Modal */}
         <WalletConnectModal
