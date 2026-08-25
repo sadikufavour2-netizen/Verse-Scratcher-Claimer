@@ -133,11 +133,27 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <div className="space-y-1.5 text-xs">
                       <div className="flex justify-between text-slate-400">
                         <span>VERSE Balance:</span>
-                        <span className="font-bold text-[#00E5FF]">{account.balanceVerse || '0'} VERSE</span>
+                        <span className="font-bold text-[#00E5FF]">
+                          {account.balanceVerseError || account.balanceVerse === 'Error' ? (
+                            <span className="text-red-400 font-medium">RPC Error</span>
+                          ) : account.balanceVerse === 'Loading...' ? (
+                            <span className="text-slate-400 animate-pulse">Loading...</span>
+                          ) : (
+                            `${account.balanceVerse || '0'} VERSE`
+                          )}
+                        </span>
                       </div>
                       <div className="flex justify-between text-slate-400">
                         <span>MATIC / POL:</span>
-                        <span className="font-bold text-purple-300">{account.balanceMatic || '0'} POL</span>
+                        <span className="font-bold text-purple-300">
+                          {account.balanceMaticError || account.balanceMatic === 'Error' ? (
+                            <span className="text-red-400 font-medium">RPC Error</span>
+                          ) : account.balanceMatic === 'Loading...' ? (
+                            <span className="text-slate-400 animate-pulse">Loading...</span>
+                          ) : (
+                            `${account.balanceMatic || '0.0000'} POL`
+                          )}
+                        </span>
                       </div>
                       <div className="flex justify-between text-slate-400">
                         <span>Polygon Network:</span>

@@ -47,10 +47,12 @@ export const VERSE_TOKEN_CONTRACTS = [
  */
 export const POLYGON_RPC_ENDPOINTS = [
   'https://polygon-rpc.com',
-  'https://rpc-mainnet.maticvigil.com',
+  'https://rpc.ankr.com/polygon',
   'https://polygon.llamarpc.com',
   'https://1rpc.io/matic',
   'https://polygon-bor-rpc.publicnode.com',
+  'https://polygon-mainnet.public.blastapi.io',
+  'https://rpc-mainnet.maticvigil.com',
 ];
 
 /**
@@ -120,7 +122,7 @@ export async function callPolygonRpc(method: string, params: any[]): Promise<any
   for (const endpoint of POLYGON_RPC_ENDPOINTS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 7000);
+      const timeoutId = setTimeout(() => controller.abort(), 6500);
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -151,17 +153,22 @@ export async function callPolygonRpc(method: string, params: any[]): Promise<any
   throw lastError || new Error(`Failed to execute ${method} on Polygon RPCs`);
 }
 
-/**
- * Real Polygon On-Chain Balance Query:
- * Queries real native POL/MATIC balance via eth_getBalance
- * Queries real VERSE ERC-20 token balance via eth_call balanceOf(address)
- */
-export async function fetchRealBalances(address: string): Promise<{
+export interface RealBalancesResult {
   balanceMatic: string;
   balanceVerse: string;
   balanceMaticRaw: bigint;
   balanceVerseRaw: bigint;
-}> {
+  balanceMaticError?: string | null;
+  balanceVerseError?: string | null;
+}
+
+/**
+ * Real Polygon On-Chain Balance Query:
+ * Queries real native POL/MATIC balance via eth_getBalance
+ * Queries real VERSE ERC-20 token balance via eth_call balanceOf(address)
+ * using the official Polygon VERSE contract (0xc3983a99540b6e92750e32d80dcfd577884ff357) and its decimals()
+ */
+export async function fetchRealBalances(address: string): Promise<RealBalancesResult> {
   if (!address || !address.startsWith('0x') || address.length !== 42) {
     return {
       balanceMatic: '0.0000',
@@ -176,50 +183,99 @@ export async function fetchRealBalances(address: string): Promise<{
   const balanceOfData = `0x70a08231${cleanAddress}`;
 
   let nativeMaticRaw = 0n;
-  let highestVerseRaw = 0n;
+  let maticError: string | null = null;
+  let formattedMatic = '0.0000';
 
-  // 1. Fetch Real Native POL / MATIC Balance
+  // 1. Fetch Real Native POL / MATIC Gas Balance
   try {
     const rawMaticHex = await callPolygonRpc('eth_getBalance', [normalizedAddr, 'latest']);
     if (rawMaticHex && rawMaticHex !== '0x') {
       nativeMaticRaw = BigInt(rawMaticHex);
+      formattedMatic = (Number(nativeMaticRaw) / 1e18).toLocaleString('en-US', {
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 4,
+      });
+    } else {
+      maticError = 'Empty response for POL balance from Polygon RPC';
     }
-  } catch (err) {
+  } catch (err: any) {
     console.warn('Error querying native POL balance on Polygon:', err);
+    maticError = err?.message || 'Failed to query POL balance on Polygon';
   }
 
-  // 2. Fetch Real VERSE ERC-20 Token Balance across official Verse contracts
-  for (const verseContract of VERSE_TOKEN_CONTRACTS) {
-    try {
-      const rawVerseHex = await callPolygonRpc('eth_call', [
-        { to: verseContract, data: balanceOfData },
-        'latest',
-      ]);
+  // 2. Fetch Real VERSE ERC-20 Token Balance using the official Polygon VERSE contract and its decimals()
+  const primaryVerseContract = '0xc3983a99540b6e92750e32d80dcfd577884ff357';
+  let verseRaw: bigint = 0n;
+  let verseDecimals = 18;
+  let verseSuccess = false;
+  let verseError: string | null = null;
 
-      if (rawVerseHex && rawVerseHex !== '0x' && rawVerseHex !== '0x0') {
-        const verseWei = BigInt(rawVerseHex);
-        if (verseWei > highestVerseRaw) {
-          highestVerseRaw = verseWei;
-        }
+  // Query decimals() from the official Polygon VERSE contract
+  try {
+    const decimalsHex = await callPolygonRpc('eth_call', [
+      { to: primaryVerseContract, data: '0x313ce567' }, // decimals()
+      'latest',
+    ]);
+    if (decimalsHex && decimalsHex !== '0x' && decimalsHex !== '0x0') {
+      const parsedDec = parseInt(decimalsHex, 16);
+      if (!isNaN(parsedDec) && parsedDec > 0 && parsedDec <= 36) {
+        verseDecimals = parsedDec;
       }
-    } catch (vErr) {
-      // Continue to next contract
+    }
+  } catch (dErr) {
+    console.warn('decimals() RPC query fallback to 18:', dErr);
+    verseDecimals = 18;
+  }
+
+  // Query balanceOf(userAddress) on the official VERSE contract
+  try {
+    const rawVerseHex = await callPolygonRpc('eth_call', [
+      { to: primaryVerseContract, data: balanceOfData },
+      'latest',
+    ]);
+
+    if (rawVerseHex && rawVerseHex !== '0x') {
+      verseRaw = BigInt(rawVerseHex);
+      verseSuccess = true;
+    } else {
+      throw new Error('Empty response from official VERSE token contract');
+    }
+  } catch (vErr: any) {
+    console.warn('Primary VERSE balanceOf query failed, attempting fallbacks:', vErr);
+
+    // Try secondary registered VERSE contracts on Polygon
+    let fallbackSuccess = false;
+    for (const altContract of VERSE_TOKEN_CONTRACTS.slice(1)) {
+      try {
+        const altHex = await callPolygonRpc('eth_call', [
+          { to: altContract, data: balanceOfData },
+          'latest',
+        ]);
+        if (altHex && altHex !== '0x') {
+          verseRaw = BigInt(altHex);
+          verseSuccess = true;
+          fallbackSuccess = true;
+          break;
+        }
+      } catch (e) {}
+    }
+
+    if (!fallbackSuccess) {
+      verseError = vErr?.message || 'Failed to query VERSE token contract on Polygon';
     }
   }
 
-  // Format balances cleanly
-  const formattedMatic = (Number(nativeMaticRaw) / 1e18).toLocaleString('en-US', {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 4,
-  });
-
-  const formattedVerse = formatBigIntBalance(highestVerseRaw, 18, 0);
+  const formattedVerse = verseSuccess
+    ? formatBigIntBalance(verseRaw, verseDecimals, 2)
+    : 'Error';
 
   return {
-    balanceMatic: formattedMatic,
+    balanceMatic: maticError ? 'Error' : formattedMatic,
     balanceVerse: formattedVerse,
     balanceMaticRaw: nativeMaticRaw,
-    balanceVerseRaw: highestVerseRaw,
+    balanceVerseRaw: verseRaw,
+    balanceMaticError: maticError,
+    balanceVerseError: verseError,
   };
 }
 
@@ -709,16 +765,31 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
     cachedProvider = provider;
     const userAddress = accounts[0];
 
-    // Initial placeholder while async blockchain query executes
+    // Fetch real Polygon balances immediately after WalletConnect connects
+    let initialBalances: RealBalancesResult = {
+      balanceMatic: 'Loading...',
+      balanceVerse: 'Loading...',
+      balanceMaticRaw: 0n,
+      balanceVerseRaw: 0n,
+    };
+
+    try {
+      initialBalances = await fetchRealBalances(userAddress);
+    } catch (bErr) {
+      console.warn('Initial balance query error after WalletConnect:', bErr);
+    }
+
     const account: WalletAccount = {
       address: userAddress,
       chainId: Number(chainId),
       walletType: 'walletconnect',
       walletName: 'WalletConnect',
-      balanceMatic: 'Loading...',
-      balanceVerse: 'Loading...',
-      balanceMaticRaw: 0n,
-      balanceVerseRaw: 0n,
+      balanceMatic: initialBalances.balanceMatic,
+      balanceVerse: initialBalances.balanceVerse,
+      balanceMaticRaw: initialBalances.balanceMaticRaw,
+      balanceVerseRaw: initialBalances.balanceVerseRaw,
+      balanceMaticError: initialBalances.balanceMaticError,
+      balanceVerseError: initialBalances.balanceVerseError,
     };
 
     cachedAccount = account;

@@ -33,7 +33,14 @@ interface ScratcherDashboardProps {
   onConnectClick: () => void;
   onSwitchNetworkClick: () => void;
   onRetryClick: () => void;
-  onUpdateAccountBalance?: (matic: string, verse: string, maticRaw?: bigint, verseRaw?: bigint) => void;
+  onUpdateAccountBalance?: (
+    matic: string,
+    verse: string,
+    maticRaw?: bigint,
+    verseRaw?: bigint,
+    maticError?: string | null,
+    verseError?: string | null
+  ) => void;
   onNotify?: (title: string, message: string, verseAmount?: number, txHash?: string) => void;
 }
 
@@ -82,7 +89,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
           balances.balanceMatic,
           balances.balanceVerse,
           balances.balanceMaticRaw,
-          balances.balanceVerseRaw
+          balances.balanceVerseRaw,
+          balances.balanceMaticError,
+          balances.balanceVerseError
         );
       }
 
@@ -108,7 +117,14 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
           fetchRealBalances(account.address)
             .then((b) => {
               if (onUpdateAccountBalance) {
-                onUpdateAccountBalance(b.balanceMatic, b.balanceVerse, b.balanceMaticRaw, b.balanceVerseRaw);
+                onUpdateAccountBalance(
+                  b.balanceMatic,
+                  b.balanceVerse,
+                  b.balanceMaticRaw,
+                  b.balanceVerseRaw,
+                  b.balanceMaticError,
+                  b.balanceVerseError
+                );
               }
             })
             .catch(() => {});
@@ -362,15 +378,17 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 <span className="text-[10px] font-black uppercase tracking-widest text-[#00E5FF]">
                   Verse Official Token
                 </span>
-                <span className="text-xs font-black text-amber-300">Polygon Chain 137</span>
+                <span className="text-xs font-black text-amber-300 uppercase tracking-wide">
+                  WIN UP TO 8,000,000 VERSE
+                </span>
               </div>
               <div className="w-full py-6 aspect-[16/9] rounded-2xl bg-gradient-to-br from-[#0F1B38] to-[#080C1A] border border-cyan-500/30 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                 <VerseCoinLogo size={72} glow={true} className="mb-2" />
                 <span className="text-sm font-extrabold text-white">Verse Scratcher NFT</span>
-                <span className="text-[11px] text-slate-400">Real Polygon Mainnet Data</span>
+                <span className="text-[11px] text-slate-400 font-medium">Real Polygon Mainnet Data</span>
               </div>
               <div className="w-full flex items-center justify-between text-xs pt-1">
-                <span className="text-slate-400">Network:</span>
+                <span className="text-slate-400 font-medium">Network:</span>
                 <span className="font-mono text-purple-300 font-bold">Polygon (POL)</span>
               </div>
             </div>
@@ -383,7 +401,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 1
               </div>
               <h3 className="text-base font-extrabold text-white">Connect Web3 Wallet</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-slate-400 leading-relaxed font-normal">
                 Connect your Bitcoin.com Wallet or any Web3 wallet on Polygon Mainnet.
               </p>
             </div>
@@ -393,7 +411,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 2
               </div>
               <h3 className="text-base font-extrabold text-white">Discover &amp; Scratch</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-slate-400 leading-relaxed font-normal">
                 Automatically scans Polygon for your owned Verse Scratcher NFTs and reveals matching prizes.
               </p>
             </div>
@@ -403,7 +421,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 3
               </div>
               <h3 className="text-base font-extrabold text-white">Claim Rewards</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">
+              <p className="text-xs text-slate-400 leading-relaxed font-normal">
                 Sign the Polygon claim transaction using POL gas to transfer VERSE directly to your address.
               </p>
             </div>
@@ -419,12 +437,12 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             <div>
               <div className="flex items-center gap-2.5 mb-1">
                 <VerseCoinLogo size={28} glow={true} />
-                <h2 className="text-2xl sm:text-3xl font-black text-white">
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
                   MY VERSE SCRATCHERS
                 </h2>
                 <PolygonBadge size="sm" />
               </div>
-              <p className="text-xs sm:text-sm text-slate-400">
+              <p className="text-xs sm:text-sm text-slate-400 font-medium">
                 Connected Polygon Address: <span className="text-[#00E5FF] font-mono font-bold">{account.address}</span>
               </p>
             </div>
@@ -474,19 +492,37 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   <VerseCoinLogo size={16} />
                   VERSE BALANCE
                 </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                {account.balanceVerseError || account.balanceVerse === 'Error' ? (
+                  <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                )}
               </div>
               <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
                 {account.balanceVerse === 'Loading...' ? (
                   <span className="text-slate-400 text-lg animate-pulse">Loading...</span>
+                ) : account.balanceVerseError || account.balanceVerse === 'Error' ? (
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-red-400 text-sm font-black flex items-center gap-1">
+                      <AlertTriangle size={14} className="text-red-400" />
+                      RPC Error
+                    </span>
+                    <button
+                      onClick={handleRefreshAll}
+                      className="text-[11px] font-bold text-[#00E5FF] hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw size={10} className={isRefreshing ? 'animate-spin' : ''} />
+                      Retry
+                    </button>
+                  </div>
                 ) : (
                   <>
-                    <span>{account.balanceVerse || '0'}</span>
+                    <span className="tracking-tight">{account.balanceVerse || '0'}</span>
                     <span className="text-xs font-black text-[#00E5FF]">VERSE</span>
                   </>
                 )}
               </div>
-              <span className="text-[11px] text-slate-400">On-Chain Polygon (ERC-20)</span>
+              <span className="text-[11px] text-slate-400 font-medium">On-Chain Polygon (ERC-20)</span>
             </div>
 
             {/* Real POL / Gas Balance */}
@@ -496,19 +532,37 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   <Coins size={14} />
                   POL GAS BALANCE
                 </span>
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                {account.balanceMaticError || account.balanceMatic === 'Error' ? (
+                  <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+                )}
               </div>
               <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
                 {account.balanceMatic === 'Loading...' ? (
                   <span className="text-slate-400 text-lg animate-pulse">Loading...</span>
+                ) : account.balanceMaticError || account.balanceMatic === 'Error' ? (
+                  <div className="flex flex-col items-start gap-1">
+                    <span className="text-red-400 text-sm font-black flex items-center gap-1">
+                      <AlertTriangle size={14} className="text-red-400" />
+                      RPC Error
+                    </span>
+                    <button
+                      onClick={handleRefreshAll}
+                      className="text-[11px] font-bold text-purple-300 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <RefreshCw size={10} className={isRefreshing ? 'animate-spin' : ''} />
+                      Retry
+                    </button>
+                  </div>
                 ) : (
                   <>
-                    <span>{account.balanceMatic || '0.0000'}</span>
+                    <span className="tracking-tight">{account.balanceMatic || '0.0000'}</span>
                     <span className="text-xs font-bold text-purple-300">POL</span>
                   </>
                 )}
               </div>
-              <span className="text-[11px] text-slate-400">Polygon Native Gas</span>
+              <span className="text-[11px] text-slate-400 font-medium">Polygon Native Gas</span>
             </div>
 
             {/* Unclaimed Rewards */}

@@ -66,15 +66,24 @@ export default function App() {
     }
   };
 
-  // Update account balance dynamically with real BigInt precision
-  const handleUpdateAccountBalance = (matic: string, verse: string, maticRaw?: bigint, verseRaw?: bigint) => {
+  // Update account balance dynamically with real BigInt precision and error states
+  const handleUpdateAccountBalance = (
+    matic: string,
+    verse: string,
+    maticRaw?: bigint,
+    verseRaw?: bigint,
+    maticError?: string | null,
+    verseError?: string | null
+  ) => {
     setAccount((prev) => {
       if (!prev) return null;
       if (
         prev.balanceMatic === matic &&
         prev.balanceVerse === verse &&
         prev.balanceMaticRaw === maticRaw &&
-        prev.balanceVerseRaw === verseRaw
+        prev.balanceVerseRaw === verseRaw &&
+        prev.balanceMaticError === maticError &&
+        prev.balanceVerseError === verseError
       ) {
         return prev;
       }
@@ -84,6 +93,8 @@ export default function App() {
         balanceVerse: verse,
         balanceMaticRaw: maticRaw ?? prev.balanceMaticRaw,
         balanceVerseRaw: verseRaw ?? prev.balanceVerseRaw,
+        balanceMaticError: maticError !== undefined ? maticError : prev.balanceMaticError,
+        balanceVerseError: verseError !== undefined ? verseError : prev.balanceVerseError,
       };
     });
   };

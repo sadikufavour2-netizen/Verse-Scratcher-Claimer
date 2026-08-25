@@ -15,10 +15,12 @@ export interface WalletAccount {
   chainId: number;
   walletType: WalletType;
   walletName: string;
-  balanceMatic?: string; // Formatted display e.g. "1.2345" or "0.0000" or "Loading..."
-  balanceVerse?: string; // Formatted display e.g. "50,000" or "0" or "Loading..."
+  balanceMatic?: string; // Formatted display e.g. "1.2345" or "0.0000" or "Loading..." or "Error"
+  balanceVerse?: string; // Formatted display e.g. "50,000" or "0" or "Loading..." or "Error"
   balanceMaticRaw?: bigint;
   balanceVerseRaw?: bigint;
+  balanceVerseError?: string | null;
+  balanceMaticError?: string | null;
 }
 
 export interface PrizeItem {
