@@ -1,5 +1,5 @@
-import React from 'react';
-import { RefreshCw, AlertCircle, LogOut, ChevronDown, ExternalLink, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { LogOut, ChevronDown, ExternalLink, RefreshCw, UserCheck, PlusCircle } from 'lucide-react';
 import { ConnectionStatus, WalletAccount } from '../types';
 import { formatAddress } from '../services/walletService';
 import { VerseLogo, PolygonBadge } from './VerseBrand';
@@ -8,9 +8,9 @@ interface NavbarProps {
   status: ConnectionStatus;
   account: WalletAccount | null;
   errorMessage?: string | null;
-  onConnectClick: () => void;
   onSwitchNetworkClick: () => void;
   onDisconnectClick: () => void;
+  onSwitchAccountClick: () => void;
   onRetryClick: () => void;
 }
 
@@ -18,51 +18,43 @@ export const Navbar: React.FC<NavbarProps> = ({
   status,
   account,
   errorMessage,
-  onConnectClick,
   onSwitchNetworkClick,
   onDisconnectClick,
+  onSwitchAccountClick,
   onRetryClick,
 }) => {
-  const [dropdownOpen, setDropdownOpen] = React.useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-[#070A13]/90 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-18 flex items-center justify-between">
-        {/* Brand */}
+        {/* Brand with 3D Verse Coin */}
         <div className="flex items-center gap-3">
-          <VerseLogo size={36} />
+          <VerseLogo size={38} />
         </div>
 
         {/* Center / Network Indicator */}
         <div className="hidden md:flex items-center gap-3">
           <PolygonBadge />
-          <span className="text-xs font-semibold text-slate-400">Verse Scratcher Claimer</span>
         </div>
 
-        {/* Right - State-driven Wallet Action */}
+        {/* Right Section - Clean header (Connect button removed from top when disconnected) */}
         <div className="flex items-center gap-3">
-          {/* STATE: DISCONNECTED */}
+          {/* STATE: DISCONNECTED -> Top button removed as requested */}
           {status === 'DISCONNECTED' && (
-            <button
-              id="navbar-connect-wallet-button"
-              onClick={onConnectClick}
-              className="px-5 py-2.5 bg-gradient-to-r from-[#00E5FF] to-[#00b4d8] hover:from-[#00cce6] hover:to-[#0096c7] text-black font-extrabold text-sm rounded-xl shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-95 cursor-pointer"
-            >
-              <ShieldCheck size={16} />
-              CONNECT WALLET
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="hidden sm:inline-flex text-xs font-semibold text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-full border border-slate-800">
+                Polygon Mainnet &bull; Chain 137
+              </span>
+            </div>
           )}
 
           {/* STATE: CONNECTING */}
           {status === 'CONNECTING' && (
-            <button
-              disabled
-              id="navbar-connecting-button"
-              className="px-5 py-2.5 bg-[#0D1426] border border-[#00E5FF]/40 text-[#00E5FF] font-bold text-sm rounded-xl flex items-center gap-2"
-            >
-              <RefreshCw size={16} className="animate-spin" />
-              CONNECTING WALLET...
-            </button>
+            <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#0D1426] border border-[#00E5FF]/30 text-[#00E5FF] text-xs font-bold">
+              <RefreshCw size={14} className="animate-spin" />
+              <span>CONNECTING WALLET...</span>
+            </div>
           )}
 
           {/* STATE: WRONG_NETWORK */}
@@ -70,34 +62,31 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               id="navbar-switch-polygon-button"
               onClick={onSwitchNetworkClick}
-              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-sm rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-2 transition-all active:scale-95 animate-pulse"
+              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl shadow-lg shadow-amber-500/20 flex items-center gap-1.5 transition-all active:scale-95 animate-pulse cursor-pointer"
             >
-              <AlertCircle size={16} />
               SWITCH TO POLYGON
             </button>
           )}
 
           {/* STATE: ERROR */}
           {status === 'ERROR' && (
-            <div className="flex items-center gap-2">
-              <button
-                id="navbar-retry-button"
-                onClick={onRetryClick}
-                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md"
-              >
-                <RefreshCw size={14} />
-                TRY AGAIN
-              </button>
-            </div>
+            <button
+              id="navbar-retry-button"
+              onClick={onRetryClick}
+              className="px-3.5 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
+            >
+              <RefreshCw size={12} />
+              TRY AGAIN
+            </button>
           )}
 
-          {/* STATE: CONNECTED */}
+          {/* STATE: CONNECTED - Active Polygon Account and Switcher */}
           {status === 'CONNECTED' && account && (
             <div className="relative">
               <button
                 id="wallet-profile-button"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2.5 px-3.5 py-2 bg-[#0D1426] hover:bg-[#121c35] border border-slate-700/80 rounded-xl transition-all"
+                className="flex items-center gap-2.5 px-3.5 py-2 bg-[#0D1426] hover:bg-[#121c35] border border-cyan-500/40 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 {/* Green Status Indicator */}
                 <div className="flex items-center gap-1.5">
@@ -120,54 +109,76 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <ChevronDown size={14} className="text-slate-400" />
               </button>
 
-              {/* Dropdown Menu */}
+              {/* Dropdown Menu for Address Management */}
               {dropdownOpen && (
                 <>
                   <div
                     className="fixed inset-0 z-40"
                     onClick={() => setDropdownOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-64 bg-[#0A0F1D] border border-slate-700 rounded-xl shadow-2xl p-3 z-50 space-y-3">
-                    <div className="pb-2 border-b border-slate-800">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
-                        Connected Wallet
-                      </span>
+                  <div className="absolute right-0 mt-2 w-72 bg-[#0A0F1D] border border-cyan-500/30 rounded-2xl shadow-2xl p-4 z-50 space-y-3.5">
+                    <div className="pb-2.5 border-b border-slate-800">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                          Active Polygon Wallet
+                        </span>
+                        <UserCheck size={14} className="text-emerald-400" />
+                      </div>
                       <p className="text-xs font-bold text-white mt-0.5">{account.walletName}</p>
-                      <p className="text-[11px] font-mono text-slate-400 break-all mt-1">
+                      <p className="text-[11px] font-mono text-[#00E5FF] break-all mt-1 bg-black/40 p-1.5 rounded-lg border border-slate-800">
                         {account.address}
                       </p>
                     </div>
 
-                    <div className="space-y-1 text-xs">
+                    <div className="space-y-1.5 text-xs">
                       <div className="flex justify-between text-slate-400">
                         <span>VERSE Balance:</span>
                         <span className="font-bold text-[#00E5FF]">{account.balanceVerse || '0'} VERSE</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
-                        <span>MATIC Balance:</span>
+                        <span>MATIC / POL Balance:</span>
                         <span className="font-bold text-purple-300">{account.balanceMatic || '0'} POL</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Polygon Network:</span>
+                        <span className="font-semibold text-emerald-400">Chain 137 (Connected)</span>
                       </div>
                     </div>
 
                     <div className="pt-2 border-t border-slate-800 flex flex-col gap-1.5">
+                      <button
+                        onClick={() => {
+                          setDropdownOpen(false);
+                          onSwitchAccountClick();
+                        }}
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[#00E5FF] hover:bg-[#00E5FF]/10 rounded-xl transition-colors text-left"
+                      >
+                        <span className="flex items-center gap-2">
+                          <PlusCircle size={14} />
+                          Connect Another Address
+                        </span>
+                        <span>&rarr;</span>
+                      </button>
+
                       <a
                         href={`https://polygonscan.com/address/${account.address}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center justify-between px-2.5 py-1.5 text-xs text-slate-300 hover:text-white hover:bg-slate-800 rounded-lg"
+                        className="flex items-center justify-between px-3 py-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800/60 rounded-xl"
                       >
                         <span>View on PolygonScan</span>
                         <ExternalLink size={12} />
                       </a>
+
                       <button
                         onClick={() => {
                           setDropdownOpen(false);
                           onDisconnectClick();
                         }}
-                        className="w-full flex items-center justify-between px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-950/40 rounded-lg font-semibold"
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs text-red-400 hover:bg-red-950/40 rounded-xl font-bold transition-colors"
                       >
-                        <span>Disconnect</span>
-                        <LogOut size={12} />
+                        <span>Disconnect Address</span>
+                        <LogOut size={13} />
                       </button>
                     </div>
                   </div>

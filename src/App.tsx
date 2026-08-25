@@ -69,6 +69,11 @@ export default function App() {
     setErrorMessage(null);
   };
 
+  // Switch / Connect another account handler
+  const handleSwitchAccount = () => {
+    setIsModalOpen(true);
+  };
+
   // Retry handler
   const handleRetry = () => {
     setErrorMessage(null);
@@ -84,9 +89,9 @@ export default function App() {
           status={connectionStatus}
           account={account}
           errorMessage={errorMessage}
-          onConnectClick={handleOpenConnect}
           onSwitchNetworkClick={handleSwitchNetwork}
           onDisconnectClick={handleDisconnect}
+          onSwitchAccountClick={handleSwitchAccount}
           onRetryClick={handleRetry}
         />
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Sparkles,
@@ -13,104 +13,16 @@ import {
   CheckCircle2,
   RefreshCw,
   Info,
+  Wallet,
 } from 'lucide-react';
 import { ConnectionStatus, ScratcherTicket, WalletAccount } from '../types';
 import { ScratchCard } from './ScratchCard';
 import { ClaimModal } from './ClaimModal';
-import { VerseLogo, PolygonBadge, BitcoinComBadge } from './VerseBrand';
-
-const INITIAL_TICKETS: ScratcherTicket[] = [
-  {
-    id: 'verse-scratcher-8842',
-    tokenId: 8842,
-    title: 'Verse Lunar Fortune #8842',
-    series: 'Lunar Fortune',
-    edition: 'Edition 1 of 500',
-    imageTheme: 'gold',
-    status: 'unscratched',
-    scratchPercentage: 0,
-    winningPrizes: [
-      { symbol: '💎', label: 'Diamond', amount: 50000, token: 'VERSE', matched: true },
-      { symbol: '💎', label: 'Diamond', amount: 50000, token: 'VERSE', matched: true },
-      { symbol: '💎', label: 'Diamond', amount: 50000, token: 'VERSE', matched: true },
-      { symbol: '🚀', label: 'Rocket', amount: 10000, token: 'VERSE', matched: false },
-      { symbol: '⚡', label: 'Bolt', amount: 5000, token: 'VERSE', matched: false },
-      { symbol: '🪙', label: 'Coin', amount: 2000, token: 'VERSE', matched: false },
-    ],
-    totalVerseValue: 50000,
-    totalMaticValue: 5,
-    mintDate: '2026-08-15',
-    isWinningTicket: true,
-  },
-  {
-    id: 'verse-scratcher-3190',
-    tokenId: 3190,
-    title: 'Verse Golden Ticket #3190',
-    series: 'Golden Ticket',
-    edition: 'Edition 42 of 250',
-    imageTheme: 'cyan',
-    status: 'scratched',
-    scratchPercentage: 100,
-    winningPrizes: [
-      { symbol: '👑', label: 'Crown', amount: 125000, token: 'VERSE', matched: true },
-      { symbol: '👑', label: 'Crown', amount: 125000, token: 'VERSE', matched: true },
-      { symbol: '👑', label: 'Crown', amount: 125000, token: 'VERSE', matched: true },
-      { symbol: '🪙', label: 'Verse', amount: 10000, token: 'VERSE', matched: false },
-      { symbol: '🌟', label: 'Star', amount: 5000, token: 'VERSE', matched: false },
-      { symbol: '🔥', label: 'Flame', amount: 2500, token: 'VERSE', matched: false },
-    ],
-    totalVerseValue: 125000,
-    totalMaticValue: 15,
-    mintDate: '2026-08-10',
-    isWinningTicket: true,
-  },
-  {
-    id: 'verse-scratcher-1428',
-    tokenId: 1428,
-    title: 'Verse Neon Cyber #1428',
-    series: 'Neon Cyber',
-    edition: 'Edition 19 of 100',
-    imageTheme: 'neon',
-    status: 'unscratched',
-    scratchPercentage: 0,
-    winningPrizes: [
-      { symbol: '🌌', label: 'Cosmos', amount: 75000, token: 'VERSE', matched: true },
-      { symbol: '🌌', label: 'Cosmos', amount: 75000, token: 'VERSE', matched: true },
-      { symbol: '🌌', label: 'Cosmos', amount: 75000, token: 'VERSE', matched: true },
-      { symbol: '💎', label: 'Diamond', amount: 20000, token: 'VERSE', matched: false },
-      { symbol: '🚀', label: 'Rocket', amount: 15000, token: 'VERSE', matched: false },
-      { symbol: '⚡', label: 'Bolt', amount: 5000, token: 'VERSE', matched: false },
-    ],
-    totalVerseValue: 75000,
-    totalMaticValue: 10,
-    mintDate: '2026-08-01',
-    isWinningTicket: true,
-  },
-  {
-    id: 'verse-scratcher-9021',
-    tokenId: 9021,
-    title: 'Diamond Verse Community #9021',
-    series: 'Diamond Verse',
-    edition: 'Edition 88 of 1000',
-    imageTheme: 'purple',
-    status: 'claimed',
-    scratchPercentage: 100,
-    winningPrizes: [
-      { symbol: '💎', label: 'Diamond', amount: 30000, token: 'VERSE', matched: true },
-      { symbol: '💎', label: 'Diamond', amount: 30000, token: 'VERSE', matched: true },
-      { symbol: '💎', label: 'Diamond', amount: 30000, token: 'VERSE', matched: true },
-      { symbol: '🪙', label: 'Coin', amount: 5000, token: 'VERSE', matched: false },
-      { symbol: '⚡', label: 'Bolt', amount: 2000, token: 'VERSE', matched: false },
-      { symbol: '🌟', label: 'Star', amount: 1000, token: 'VERSE', matched: false },
-    ],
-    totalVerseValue: 30000,
-    totalMaticValue: 0,
-    mintDate: '2026-07-28',
-    claimTxHash: '0x8f3c71a9e22419c8d6291a0b3457193c72b9a4561083ef',
-    claimTimestamp: '2026-08-20',
-    isWinningTicket: true,
-  },
-];
+import { VerseLogo, PolygonBadge, BitcoinComBadge, VerseCoinLogo } from './VerseBrand';
+import {
+  getScratchersForAddress,
+  saveScratchersForAddress,
+} from '../services/walletService';
 
 interface ScratcherDashboardProps {
   status: ConnectionStatus;
@@ -129,54 +41,77 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
   onSwitchNetworkClick,
   onRetryClick,
 }) => {
-  const [tickets, setTickets] = useState<ScratcherTicket[]>(INITIAL_TICKETS);
+  const [tickets, setTickets] = useState<ScratcherTicket[]>([]);
   const [activeFilter, setActiveFilter] = useState<'all' | 'unscratched' | 'scratched' | 'claimed'>('all');
   const [selectedTicketForClaim, setSelectedTicketForClaim] = useState<ScratcherTicket | null>(null);
   const [isBatchClaimOpen, setIsBatchClaimOpen] = useState(false);
 
+  // Sync tickets whenever active account address changes
+  useEffect(() => {
+    if (account?.address) {
+      const addressTickets = getScratchersForAddress(account.address);
+      setTickets(addressTickets);
+    } else {
+      // Default placeholder preview tickets
+      setTickets(getScratchersForAddress('0x3F89a1945C227e7b8DaD7A27dC47b59E2a61137c'));
+    }
+  }, [account?.address]);
+
   const handleScratchComplete = (ticketId: string) => {
-    setTickets((prev) =>
-      prev.map((t) =>
+    setTickets((prev) => {
+      const updated = prev.map((t) =>
         t.id === ticketId
           ? {
               ...t,
-              status: 'scratched',
+              status: 'scratched' as const,
               scratchPercentage: 100,
             }
           : t
-      )
-    );
+      );
+      if (account?.address) {
+        saveScratchersForAddress(account.address, updated);
+      }
+      return updated;
+    });
   };
 
   const handleClaimSuccess = (claimedTicketIds: string[], txHash: string) => {
-    setTickets((prev) =>
-      prev.map((t) =>
+    setTickets((prev) => {
+      const updated = prev.map((t) =>
         claimedTicketIds.includes(t.id)
           ? {
               ...t,
-              status: 'claimed',
+              status: 'claimed' as const,
               claimTxHash: txHash,
               claimTimestamp: new Date().toISOString(),
             }
           : t
-      )
-    );
+      );
+      if (account?.address) {
+        saveScratchersForAddress(account.address, updated);
+      }
+      return updated;
+    });
     setSelectedTicketForClaim(null);
     setIsBatchClaimOpen(false);
   };
 
   const handleScratchAll = () => {
-    setTickets((prev) =>
-      prev.map((t) =>
+    setTickets((prev) => {
+      const updated = prev.map((t) =>
         t.status === 'unscratched'
           ? {
               ...t,
-              status: 'scratched',
+              status: 'scratched' as const,
               scratchPercentage: 100,
             }
           : t
-      )
-    );
+      );
+      if (account?.address) {
+        saveScratchersForAddress(account.address, updated);
+      }
+      return updated;
+    });
   };
 
   // Calculations
@@ -215,12 +150,13 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 <BitcoinComBadge />
               </div>
 
-              <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight">
-                VERSE SCRATCHER <span className="text-[#00E5FF]">CLAIMER</span>
+              <h1 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight flex flex-col sm:flex-row sm:items-center gap-3">
+                <span>VERSE SCRATCHER</span>
+                <span className="text-[#00E5FF]">CLAIMER</span>
               </h1>
 
               <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                Connect your <span className="text-white font-semibold">Bitcoin.com Wallet</span> or Web3 provider on Polygon to reveal scratch-off rewards and claim $VERSE directly to your address.
+                Connect your <span className="text-white font-semibold">Bitcoin.com Wallet</span> or Web3 provider on Polygon to reveal scratch-off rewards and claim $VERSE directly to your connected address.
               </p>
 
               {/* Status specific banners */}
@@ -269,9 +205,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 </div>
               )}
 
-              {/* Connect CTA Button */}
+              {/* Connect CTA Button on Hero */}
               {status === 'DISCONNECTED' && (
-                <div className="pt-2 flex flex-col sm:flex-row items-center gap-3">
+                <div className="pt-2 flex flex-col sm:flex-row items-center gap-4">
                   <button
                     id="hero-connect-wallet-button"
                     onClick={onConnectClick}
@@ -281,27 +217,28 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     CONNECT WALLET
                     <ArrowRight size={18} />
                   </button>
-                  <span className="text-xs text-slate-400">
-                    Zero startup execution &bull; Safe lazy load
-                  </span>
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <span className="w-2 h-2 rounded-full bg-[#00E5FF]" />
+                    <span>Project ID Configured &bull; Polygon 137</span>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Visual Scratch Preview Card */}
-            <div className="relative z-10 w-full sm:w-80 p-5 rounded-2xl bg-[#090E1C] border border-cyan-500/40 shadow-2xl space-y-3">
-              <div className="flex items-center justify-between">
+            {/* Visual 3D Logo & Scratch Preview Card */}
+            <div className="relative z-10 w-full sm:w-80 p-5 rounded-2xl bg-[#090E1C] border border-cyan-500/40 shadow-2xl space-y-3 flex flex-col items-center">
+              <div className="w-full flex items-center justify-between">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[#00E5FF]">
-                  Preview Card
+                  Official Verse Token
                 </span>
                 <span className="text-xs font-bold text-amber-400">Win up to 500k VERSE</span>
               </div>
-              <div className="aspect-[16/9] rounded-xl bg-gradient-to-br from-[#101D3A] to-[#0A1020] border border-slate-700/80 flex flex-col items-center justify-center p-4 text-center">
-                <Sparkles size={28} className="text-[#00E5FF] mb-1 animate-pulse" />
+              <div className="w-full py-4 aspect-[16/9] rounded-xl bg-gradient-to-br from-[#101D3A] to-[#0A1020] border border-slate-700/80 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+                <VerseCoinLogo size={68} glow={true} className="mb-2" />
                 <span className="text-sm font-bold text-white">Verse Scratcher NFT</span>
-                <span className="text-[11px] text-slate-400">Connect wallet to scratch &amp; claim</span>
+                <span className="text-[11px] text-slate-400">Scratch &amp; claim prizes on Polygon</span>
               </div>
-              <div className="flex items-center justify-between text-xs pt-1">
+              <div className="w-full flex items-center justify-between text-xs pt-1">
                 <span className="text-slate-400">Network:</span>
                 <span className="font-mono text-purple-300 font-semibold">Polygon (137)</span>
               </div>
@@ -316,7 +253,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </div>
               <h3 className="text-base font-bold text-white">Connect Wallet</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Connect via Bitcoin.com Wallet or WalletConnect on Polygon Mainnet without any background startup locks.
+                Connect via Bitcoin.com Wallet or WalletConnect with your project ID on Polygon Mainnet.
               </p>
             </div>
 
@@ -336,7 +273,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </div>
               <h3 className="text-base font-bold text-white">Claim Rewards</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Execute fast, low-cost Polygon smart contract transactions to receive VERSE directly into your wallet.
+                Execute fast Polygon transactions to send VERSE prizes directly to the connected address.
               </p>
             </div>
           </div>
@@ -349,14 +286,15 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
           {/* Top Banner & Stats Overview */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-center gap-2.5 mb-1">
+                <VerseCoinLogo size={28} />
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-white">
                   My Verse Scratchers
                 </h2>
                 <PolygonBadge size="sm" />
               </div>
               <p className="text-xs sm:text-sm text-slate-400">
-                Connected with <span className="text-slate-200 font-mono">{account.address}</span> ({account.walletName})
+                Claiming to connected Polygon address: <span className="text-[#00E5FF] font-mono font-semibold">{account.address}</span>
               </p>
             </div>
 
@@ -366,7 +304,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 <button
                   id="scratch-all-btn"
                   onClick={handleScratchAll}
-                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95"
+                  className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
                 >
                   <Sparkles size={14} className="text-amber-400" />
                   Scratch All ({unscratchedCount})
@@ -377,7 +315,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 <button
                   id="claim-all-btn"
                   onClick={() => setIsBatchClaimOpen(true)}
-                  className="px-5 py-2.5 bg-gradient-to-r from-[#00E5FF] to-[#00FF88] hover:from-[#00cce6] hover:to-[#00e67a] text-black font-extrabold text-xs rounded-xl shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-95 animate-pulse"
+                  className="px-5 py-2.5 bg-gradient-to-r from-[#00E5FF] to-[#00FF88] hover:from-[#00cce6] hover:to-[#00e67a] text-black font-extrabold text-xs rounded-xl shadow-lg shadow-cyan-500/20 flex items-center gap-2 transition-all active:scale-95 animate-pulse cursor-pointer"
                 >
                   <Gift size={16} />
                   Claim All ({readyVerseValue.toLocaleString()} VERSE)
@@ -391,7 +329,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             <div className="p-5 rounded-2xl bg-[#0A0F1D] border border-slate-800 space-y-1">
               <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Layers size={14} className="text-[#00E5FF]" />
-                Total Scratchers
+                NFTs in Address
               </span>
               <div className="text-2xl font-extrabold text-white">{tickets.length} Tickets</div>
               <span className="text-[11px] text-slate-500">Polygon ERC-721 Collection</span>
@@ -414,7 +352,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             <div className="p-5 rounded-2xl bg-[#0A0F1D] border border-slate-800 space-y-1">
               <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
                 <CheckCircle2 size={14} />
-                Total Claimed
+                Prize Sent to Address
               </span>
               <div className="text-2xl font-extrabold text-white flex items-baseline gap-1.5">
                 <span>{totalClaimedVerse.toLocaleString()}</span>

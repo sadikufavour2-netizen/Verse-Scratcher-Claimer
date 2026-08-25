@@ -1,7 +1,10 @@
-import { WalletAccount, WalletType, POLYGON_MAINNET } from '../types';
+import { WalletAccount, WalletType, POLYGON_MAINNET, ScratcherTicket } from '../types';
 
 let cachedProvider: any = null;
 let cachedAccount: WalletAccount | null = null;
+
+// User-specified WalletConnect Cloud Project ID
+export const DEFAULT_WALLETCONNECT_PROJECT_ID = '31ef6d708552677094488d29f5846014';
 
 export interface ConnectResult {
   success: boolean;
@@ -11,34 +14,138 @@ export interface ConnectResult {
 }
 
 /**
- * Checks if VITE_WALLETCONNECT_PROJECT_ID exists without crashing.
+ * Checks if VITE_WALLETCONNECT_PROJECT_ID exists or uses user's Project ID.
  */
-export function getWalletConnectProjectId(): string | undefined {
+export function getWalletConnectProjectId(): string {
   try {
     const id = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID;
     if (typeof id === 'string' && id.trim().length > 0) {
       return id.trim();
     }
   } catch (e) {
-    console.warn('Unable to read VITE_WALLETCONNECT_PROJECT_ID', e);
+    console.warn('Unable to read VITE_WALLETCONNECT_PROJECT_ID from env', e);
   }
-  return undefined;
+  return DEFAULT_WALLETCONNECT_PROJECT_ID;
+}
+
+/**
+ * Generates or retrieves saved Verse Scratcher NFT tickets for a specific Polygon address.
+ * Each connected address has its own deterministic tickets and prize distribution!
+ */
+export function getScratchersForAddress(address: string): ScratcherTicket[] {
+  const normalizedAddr = address.toLowerCase();
+  const storageKey = `verse_scratchers_${normalizedAddr}`;
+
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.warn('LocalStorage error', e);
+  }
+
+  // Generate deterministic seed based on address
+  let seed = 0;
+  for (let i = 0; i < normalizedAddr.length; i++) {
+    seed = (seed * 31 + normalizedAddr.charCodeAt(i)) & 0xffffffff;
+  }
+  const absSeed = Math.abs(seed);
+
+  const token1 = 1000 + (absSeed % 8999);
+  const token2 = 2000 + ((absSeed >> 4) % 7999);
+  const token3 = 3000 + ((absSeed >> 8) % 6999);
+
+  const initialTickets: ScratcherTicket[] = [
+    {
+      id: `verse-scratcher-${token1}-${normalizedAddr.slice(2, 6)}`,
+      tokenId: token1,
+      title: `Verse Lunar Fortune #${token1}`,
+      series: 'Lunar Fortune',
+      edition: 'Edition 1 of 500',
+      imageTheme: 'gold',
+      status: 'unscratched',
+      scratchPercentage: 0,
+      winningPrizes: [
+        { symbol: '💎', label: 'Diamond', amount: 50000, token: 'VERSE', matched: true },
+        { symbol: '💎', label: 'Diamond', amount: 50000, token: 'VERSE', matched: true },
+        { symbol: '💎', label: 'Diamond', amount: 50000, token: 'VERSE', matched: true },
+        { symbol: '🚀', label: 'Rocket', amount: 10000, token: 'VERSE', matched: false },
+        { symbol: '⚡', label: 'Bolt', amount: 5000, token: 'VERSE', matched: false },
+        { symbol: '🪙', label: 'Coin', amount: 2000, token: 'VERSE', matched: false },
+      ],
+      totalVerseValue: 50000,
+      totalMaticValue: 5,
+      mintDate: '2026-08-15',
+      isWinningTicket: true,
+    },
+    {
+      id: `verse-scratcher-${token2}-${normalizedAddr.slice(2, 6)}`,
+      tokenId: token2,
+      title: `Verse Golden Ticket #${token2}`,
+      series: 'Golden Ticket',
+      edition: 'Edition 42 of 250',
+      imageTheme: 'cyan',
+      status: 'scratched',
+      scratchPercentage: 100,
+      winningPrizes: [
+        { symbol: '👑', label: 'Crown', amount: 125000, token: 'VERSE', matched: true },
+        { symbol: '👑', label: 'Crown', amount: 125000, token: 'VERSE', matched: true },
+        { symbol: '👑', label: 'Crown', amount: 125000, token: 'VERSE', matched: true },
+        { symbol: '🪙', label: 'Verse', amount: 10000, token: 'VERSE', matched: false },
+        { symbol: '🌟', label: 'Star', amount: 5000, token: 'VERSE', matched: false },
+        { symbol: '🔥', label: 'Flame', amount: 2500, token: 'VERSE', matched: false },
+      ],
+      totalVerseValue: 125000,
+      totalMaticValue: 15,
+      mintDate: '2026-08-10',
+      isWinningTicket: true,
+    },
+    {
+      id: `verse-scratcher-${token3}-${normalizedAddr.slice(2, 6)}`,
+      tokenId: token3,
+      title: `Verse Neon Cyber #${token3}`,
+      series: 'Neon Cyber',
+      edition: 'Edition 19 of 100',
+      imageTheme: 'neon',
+      status: 'unscratched',
+      scratchPercentage: 0,
+      winningPrizes: [
+        { symbol: '🌌', label: 'Cosmos', amount: 75000, token: 'VERSE', matched: true },
+        { symbol: '🌌', label: 'Cosmos', amount: 75000, token: 'VERSE', matched: true },
+        { symbol: '🌌', label: 'Cosmos', amount: 75000, token: 'VERSE', matched: true },
+        { symbol: '💎', label: 'Diamond', amount: 20000, token: 'VERSE', matched: false },
+        { symbol: '🚀', label: 'Rocket', amount: 15000, token: 'VERSE', matched: false },
+        { symbol: '⚡', label: 'Bolt', amount: 5000, token: 'VERSE', matched: false },
+      ],
+      totalVerseValue: 75000,
+      totalMaticValue: 10,
+      mintDate: '2026-08-01',
+      isWinningTicket: true,
+    },
+  ];
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(initialTickets));
+  } catch (e) {}
+
+  return initialTickets;
+}
+
+export function saveScratchersForAddress(address: string, tickets: ScratcherTicket[]) {
+  try {
+    const normalizedAddr = address.toLowerCase();
+    const storageKey = `verse_scratchers_${normalizedAddr}`;
+    localStorage.setItem(storageKey, JSON.stringify(tickets));
+  } catch (e) {}
 }
 
 /**
  * Lazy loads and initializes WalletConnect ONLY when explicitly called by user click.
- * No top-level instantiation.
+ * Uses the user's project ID: 31ef6d708552677094488d29f5846014
  */
 export async function connectViaWalletConnect(): Promise<ConnectResult> {
   const projectId = getWalletConnectProjectId();
-
-  if (!projectId) {
-    return {
-      success: false,
-      isConfigurationMissing: true,
-      error: 'Wallet connection is not configured.',
-    };
-  }
 
   try {
     // Dynamic import to isolate WalletConnect from initial bundle/execution
@@ -51,14 +158,24 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
       showQrModal: true,
       qrModalOptions: {
         themeMode: 'dark',
+        themeVariables: {
+          '--wcm-accent-color': '#00E5FF',
+          '--wcm-background-color': '#0A0F1D',
+        },
         explorerRecommendedWalletIds: [
           // Bitcoin.com Wallet
           'b182875b28292c3065b2fa011a684b067a9cf71fbf9df46ff629c4ef6996d9f8',
+          // MetaMask
+          'c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96',
+          // Trust Wallet
+          '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0',
+          // Coinbase Wallet
+          'fd20dc426fb3704baaa3500a455059a6f83dd512c8620fba0ae40b3f7f86016f',
         ],
       },
       metadata: {
         name: 'Verse Scratcher Claimer',
-        description: 'Claim and scratch Verse Scratcher NFTs on Polygon',
+        description: 'Claim and scratch Verse Scratcher NFTs on Polygon network',
         url: typeof window !== 'undefined' ? window.location.origin : 'https://verse.bitcoin.com',
         icons: ['https://verse.bitcoin.com/favicon.ico'],
       },
@@ -79,9 +196,9 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
       address: accounts[0],
       chainId: Number(chainId),
       walletType: 'walletconnect',
-      walletName: 'WalletConnect (Bitcoin.com)',
-      balanceMatic: '12.45',
-      balanceVerse: '185,420',
+      walletName: 'WalletConnect',
+      balanceMatic: '14.85',
+      balanceVerse: '280,000',
     };
 
     cachedAccount = account;
@@ -100,21 +217,17 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
 }
 
 /**
- * Connects to Bitcoin.com Wallet / Injected Browser Extension (MetaMask, Bitcoin.com, etc.)
- * Only accesses window.ethereum after user click.
+ * Connects to Bitcoin.com Wallet / Injected Browser Extension
  */
 export async function connectViaInjected(walletType: WalletType = 'injected'): Promise<ConnectResult> {
   try {
     if (typeof window === 'undefined' || !window.ethereum) {
-      return {
-        success: false,
-        error: 'No browser wallet detected. Please install the Bitcoin.com Wallet or MetaMask extension, or use WalletConnect.',
-      };
+      // If no browser wallet installed, directly fallback to WalletConnect modal with project id!
+      return await connectViaWalletConnect();
     }
 
     const ethereum = window.ethereum;
     
-    // Request accounts safely
     const accounts = (await ethereum.request({
       method: 'eth_requestAccounts',
     })) as string[];
@@ -136,9 +249,9 @@ export async function connectViaInjected(walletType: WalletType = 'injected'): P
       address: accounts[0],
       chainId: isNaN(chainId) ? 137 : chainId,
       walletType: isBitcoinCom ? 'bitcoin_com' : 'injected',
-      walletName: isBitcoinCom ? 'Bitcoin.com Wallet' : 'Browser Wallet',
+      walletName: isBitcoinCom ? 'Bitcoin.com Wallet' : 'Browser Web3 Wallet',
       balanceMatic: '24.80',
-      balanceVerse: '350,000',
+      balanceVerse: '450,000',
     };
 
     cachedAccount = account;
@@ -157,15 +270,51 @@ export async function connectViaInjected(walletType: WalletType = 'injected'): P
 }
 
 /**
- * Connects to a simulated Polygon Verse wallet for preview testing
- * when running in sandboxed environment.
+ * Connects custom Polygon address (allows connecting and disconnecting any arbitrary Polygon address)
  */
-export function connectViaDemo(): ConnectResult {
+export function connectCustomPolygonAddress(customAddress: string): ConnectResult {
+  const cleanAddr = customAddress.trim();
+  if (!cleanAddr.startsWith('0x') || cleanAddr.length < 10) {
+    return {
+      success: false,
+      error: 'Please enter a valid Polygon address starting with 0x.',
+    };
+  }
+
+  const account: WalletAccount = {
+    address: cleanAddr,
+    chainId: POLYGON_MAINNET.chainId,
+    walletType: 'injected',
+    walletName: 'Polygon Account',
+    balanceMatic: '35.20',
+    balanceVerse: '520,000',
+  };
+
+  cachedAccount = account;
+  return {
+    success: true,
+    account,
+  };
+}
+
+/**
+ * Instant demo mode with realistic Polygon address
+ */
+export function connectViaDemo(addressIndex: number = 1): ConnectResult {
+  const addresses = [
+    '0x3F89a1945C227e7b8DaD7A27dC47b59E2a61137c',
+    '0x71C567A8fE76A3D80687E34eFe40b54376C1897e',
+    '0x9A25cB3d82F72e3532C2b2E0B25aA1D67B8097E4',
+    '0x52E8492AbC45F48008d5DEB2871156828AbDea8B',
+  ];
+
+  const addr = addresses[(addressIndex - 1) % addresses.length];
+
   const demoAccount: WalletAccount = {
-    address: '0x3F89a1945C227e7b8DaD7A27dC47b59E2a61137c',
+    address: addr,
     chainId: POLYGON_MAINNET.chainId,
     walletType: 'demo',
-    walletName: 'Bitcoin.com Wallet (Demo Mode)',
+    walletName: `Bitcoin.com Wallet (${formatAddress(addr)})`,
     balanceMatic: '48.50',
     balanceVerse: '1,250,000',
   };
@@ -199,7 +348,6 @@ export async function switchToPolygon(currentAccount: WalletAccount): Promise<{ 
       });
       return { success: true };
     } catch (switchError: any) {
-      // Error code 4902 means the chain has not been added to the wallet
       if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
         await provider.request({
           method: 'wallet_addEthereumChain',
@@ -227,7 +375,7 @@ export async function switchToPolygon(currentAccount: WalletAccount): Promise<{ 
 }
 
 /**
- * Disconnects the wallet.
+ * Disconnects the current wallet.
  */
 export async function disconnectWallet(): Promise<void> {
   try {
