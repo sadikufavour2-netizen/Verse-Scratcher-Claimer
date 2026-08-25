@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Sparkles,
   Trophy,
@@ -7,16 +6,13 @@ import {
   Coins,
   ShieldCheck,
   Zap,
-  Layers,
   ArrowRight,
-  Filter,
   CheckCircle2,
   RefreshCw,
   Info,
-  Wallet,
   PlusCircle,
   Search,
-  ExternalLink,
+  AlertTriangle,
 } from 'lucide-react';
 import { ConnectionStatus, ScratcherTicket, WalletAccount } from '../types';
 import { ScratchCard } from './ScratchCard';
@@ -37,7 +33,7 @@ interface ScratcherDashboardProps {
   onConnectClick: () => void;
   onSwitchNetworkClick: () => void;
   onRetryClick: () => void;
-  onUpdateAccountBalance?: (matic: string, verse: string) => void;
+  onUpdateAccountBalance?: (matic: string, verse: string, maticRaw?: bigint, verseRaw?: bigint) => void;
   onNotify?: (title: string, message: string, verseAmount?: number, txHash?: string) => void;
 }
 
@@ -53,104 +49,113 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
 }) => {
   const [tickets, setTickets] = useState<ScratcherTicket[]>([]);
   const [isLoadingNFTs, setIsLoadingNFTs] = useState<boolean>(false);
-  const [isRefreshingBalance, setIsRefreshingBalance] = useState<boolean>(false);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'unscratched' | 'scratched' | 'claimed'>('all');
   const [selectedTicketForClaim, setSelectedTicketForClaim] = useState<ScratcherTicket | null>(null);
   const [isBatchClaimOpen, setIsBatchClaimOpen] = useState(false);
   const [customTokenInput, setCustomTokenInput] = useState('');
   const [showImportForm, setShowImportForm] = useState(false);
+  const [isCheckingToken, setIsCheckingToken] = useState(false);
 
-  // Fetch real NFTs and real balances for connected Polygon address
-  useEffect(() => {
-    let isMounted = true;
+  // Load Real Polygon on-chain data for connected address
+  const loadPolygonData = useCallback(async (address: string, showToast = false) => {
+    setIsLoadingNFTs(true);
+    setLoadError(null);
 
-    async function loadWalletData() {
-      if (account?.address) {
-        setIsLoadingNFTs(true);
-        // Load locally saved cache for instant UI
-        const saved = getSavedScratchersForAddress(account.address);
-        if (saved && saved.length > 0) {
-          setTickets(saved);
-        }
-
-        try {
-          const [realTickets, balances] = await Promise.all([
-            fetchRealScratchersForAddress(account.address),
-            fetchRealBalances(account.address),
-          ]);
-
-          if (isMounted) {
-            setTickets(realTickets);
-            if (onUpdateAccountBalance) {
-              onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
-            }
-          }
-        } catch (e) {
-          console.warn('Wallet load failed', e);
-        } finally {
-          if (isMounted) {
-            setIsLoadingNFTs(false);
-          }
-        }
-      } else {
-        setTickets([]);
-      }
+    // Instant local cache restoration
+    const saved = getSavedScratchersForAddress(address);
+    if (saved && saved.length > 0) {
+      setTickets(saved);
     }
 
-    loadWalletData();
-
-    // Auto-refresh balances every 15 seconds to keep data live
-    const interval = setInterval(async () => {
-      if (account?.address && onUpdateAccountBalance) {
-        try {
-          const balances = await fetchRealBalances(account.address);
-          onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
-        } catch (e) {}
-      }
-    }, 15000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [account?.address]);
-
-  // Refresh Balance & NFTs handler
-  const handleRefreshAll = async () => {
-    if (!account?.address) return;
-    setIsRefreshingBalance(true);
-    setIsLoadingNFTs(true);
     try {
+      // Parallel execution for real on-chain balances and real NFT scanner
       const [realTickets, balances] = await Promise.all([
-        fetchRealScratchersForAddress(account.address),
-        fetchRealBalances(account.address),
+        fetchRealScratchersForAddress(address),
+        fetchRealBalances(address),
       ]);
+
       setTickets(realTickets);
       if (onUpdateAccountBalance) {
-        onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
+        onUpdateAccountBalance(
+          balances.balanceMatic,
+          balances.balanceVerse,
+          balances.balanceMaticRaw,
+          balances.balanceVerseRaw
+        );
       }
-      if (onNotify) {
-        onNotify('Balance Refreshed', `Synced on-chain balances with Polygon.`);
+
+      if (showToast && onNotify) {
+        onNotify('Polygon Synced', `Updated on-chain balances and discovered ${realTickets.length} scratchers.`);
       }
+    } catch (err: any) {
+      console.warn('Polygon on-chain fetch encountered an issue:', err);
+      setLoadError('POLYGON DATA UNAVAILABLE: Could not sync with Polygon nodes. Please try re-scanning.');
     } finally {
-      setIsRefreshingBalance(false);
       setIsLoadingNFTs(false);
+    }
+  }, [onUpdateAccountBalance, onNotify]);
+
+  // Trigger load when account changes
+  useEffect(() => {
+    if (account?.address && status === 'CONNECTED') {
+      loadPolygonData(account.address);
+
+      // Auto-poll balances every 20 seconds to keep live
+      const interval = setInterval(() => {
+        if (account.address) {
+          fetchRealBalances(account.address)
+            .then((b) => {
+              if (onUpdateAccountBalance) {
+                onUpdateAccountBalance(b.balanceMatic, b.balanceVerse, b.balanceMaticRaw, b.balanceVerseRaw);
+              }
+            })
+            .catch(() => {});
+        }
+      }, 20000);
+
+      return () => clearInterval(interval);
+    } else {
+      setTickets([]);
+      setLoadError(null);
+    }
+  }, [account?.address, status, loadPolygonData, onUpdateAccountBalance]);
+
+  // Refresh handler
+  const handleRefreshAll = async () => {
+    if (!account?.address) return;
+    setIsRefreshing(true);
+    try {
+      await loadPolygonData(account.address, true);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
-  const handleImportToken = (e: React.FormEvent) => {
+  // Specific Token ID Verification
+  const handleImportToken = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!account?.address || !customTokenInput.trim()) return;
     const id = parseInt(customTokenInput.trim(), 10);
     if (isNaN(id) || id <= 0) return;
 
-    const updated = addManualScratcherForAddress(account.address, id);
-    setTickets(updated);
-    setCustomTokenInput('');
-    setShowImportForm(false);
+    setIsCheckingToken(true);
+    try {
+      const res = await addManualScratcherForAddress(account.address, id);
+      setTickets(res.tickets);
+      setCustomTokenInput('');
+      setShowImportForm(false);
 
-    if (onNotify) {
-      onNotify('Verse Scratcher Added', `Loaded Token #${id} for your wallet.`);
+      if (onNotify) {
+        onNotify('Token Verified on Polygon', res.message || `Discovered Scratcher #${id}.`);
+      }
+    } catch (err: any) {
+      if (onNotify) {
+        onNotify('Token Check Error', err?.message || `Could not find Token #${id} on Polygon.`);
+      }
+    } finally {
+      setIsCheckingToken(false);
     }
   };
 
@@ -194,7 +199,6 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       return updated;
     });
 
-    // Notify user with popup toast
     if (onNotify) {
       onNotify(
         'Rewards Successfully Claimed!',
@@ -207,11 +211,18 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
     // Refresh real balances immediately after claiming
     if (account?.address) {
       setTimeout(async () => {
-        const balances = await fetchRealBalances(account.address);
-        if (onUpdateAccountBalance) {
-          onUpdateAccountBalance(balances.balanceMatic, balances.balanceVerse);
-        }
-      }, 1000);
+        try {
+          const balances = await fetchRealBalances(account.address);
+          if (onUpdateAccountBalance) {
+            onUpdateAccountBalance(
+              balances.balanceMatic,
+              balances.balanceVerse,
+              balances.balanceMaticRaw,
+              balances.balanceVerseRaw
+            );
+          }
+        } catch (e) {}
+      }, 1200);
     }
 
     setSelectedTicketForClaim(null);
@@ -258,17 +269,12 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       {/* 1. DISCONNECTED / WRONG NETWORK / ERROR HERO STATE */}
       {status !== 'CONNECTED' && (
         <div className="space-y-8">
-          {/* Main Hero Card styled with Verse Logo Theme */}
           <div
             id="hero-disconnected-card"
             className="relative rounded-3xl bg-[#080C1A] border border-cyan-500/30 p-8 sm:p-12 shadow-[0_0_50px_rgba(0,229,255,0.15)] overflow-hidden text-center sm:text-left flex flex-col sm:flex-row items-center justify-between gap-8"
           >
-            {/* Top Metallic Rainbow Gradient Stripe matching Verse Coin */}
+            {/* Top Metallic Rainbow Gradient Stripe */}
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#00E5FF] via-[#3B82F6] via-[#9333EA] to-[#FF00A0]" />
-
-            {/* Ambient Lighting */}
-            <div className="absolute -top-24 -left-24 w-80 h-80 bg-[#00E5FF]/10 rounded-full blur-3xl pointer-events-none" />
-            <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-[#FF00A0]/10 rounded-full blur-3xl pointer-events-none" />
 
             <div className="relative z-10 max-w-xl space-y-4">
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2.5">
@@ -283,10 +289,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </h1>
 
               <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                Connect your Web3 wallet on Polygon to reveal your Verse Scratcher NFTs, scratch for rewards, and claim prizes directly to your connected address.
+                Connect your Web3 wallet on Polygon to discover your real Verse Scratcher NFTs, scratch for rewards, and claim prizes directly to your connected address.
               </p>
 
-              {/* Status specific banners */}
               {status === 'WRONG_NETWORK' && (
                 <div
                   id="wrong-network-banner"
@@ -297,7 +302,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     WRONG NETWORK DETECTED
                   </div>
                   <p className="text-xs text-amber-200">
-                    Please switch your connected wallet to Polygon Mainnet to view and claim your Verse Scratchers.
+                    Please switch your connected wallet to Polygon Mainnet (Chain ID: 137).
                   </p>
                   <button
                     id="hero-switch-network-btn"
@@ -332,7 +337,6 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 </div>
               )}
 
-              {/* Connect CTA Button on Hero */}
               {status === 'DISCONNECTED' && (
                 <div className="pt-2 flex flex-col sm:flex-row items-center gap-4">
                   <button
@@ -346,41 +350,41 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   </button>
                   <div className="flex items-center gap-2 text-xs text-slate-400">
                     <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-                    <span>Web3 Ready &bull; Polygon</span>
+                    <span>Polygon Mainnet (Chain ID 137)</span>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Visual 3D Logo & Scratch Preview Card */}
+            {/* Visual 3D Logo Card */}
             <div className="relative z-10 w-full sm:w-80 p-5 rounded-3xl bg-[#0A0F1E] border border-cyan-500/40 shadow-2xl space-y-3 flex flex-col items-center">
               <div className="w-full flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase tracking-widest text-[#00E5FF]">
                   Verse Official Token
                 </span>
-                <span className="text-xs font-black text-amber-300">Win up to 500k VERSE</span>
+                <span className="text-xs font-black text-amber-300">Polygon Chain 137</span>
               </div>
-              <div className="w-full py-5 aspect-[16/9] rounded-2xl bg-gradient-to-br from-[#0F1B38] to-[#080C1A] border border-cyan-500/30 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
+              <div className="w-full py-6 aspect-[16/9] rounded-2xl bg-gradient-to-br from-[#0F1B38] to-[#080C1A] border border-cyan-500/30 flex flex-col items-center justify-center p-4 text-center relative overflow-hidden">
                 <VerseCoinLogo size={72} glow={true} className="mb-2" />
                 <span className="text-sm font-extrabold text-white">Verse Scratcher NFT</span>
-                <span className="text-[11px] text-slate-400">Scratch &amp; claim prizes on Polygon</span>
+                <span className="text-[11px] text-slate-400">Real Polygon Mainnet Data</span>
               </div>
               <div className="w-full flex items-center justify-between text-xs pt-1">
                 <span className="text-slate-400">Network:</span>
-                <span className="font-mono text-purple-300 font-bold">Polygon Mainnet</span>
+                <span className="font-mono text-purple-300 font-bold">Polygon (POL)</span>
               </div>
             </div>
           </div>
 
-          {/* How It Works Steps */}
+          {/* Steps */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             <div className="p-6 rounded-3xl bg-[#080C1A] border border-slate-800 space-y-2.5">
               <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-[#00E5FF] font-black">
                 1
               </div>
-              <h3 className="text-base font-extrabold text-white">Connect Wallet</h3>
+              <h3 className="text-base font-extrabold text-white">Connect Web3 Wallet</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Connect your Web3 wallet via WalletConnect on Polygon Mainnet to scan your address.
+                Connect your Bitcoin.com Wallet or any Web3 wallet on Polygon Mainnet.
               </p>
             </div>
 
@@ -388,26 +392,26 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black">
                 2
               </div>
-              <h3 className="text-base font-extrabold text-white">Scratch to Reveal</h3>
+              <h3 className="text-base font-extrabold text-white">Discover &amp; Scratch</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Interactive scratch cards or one-click auto-scratch to reveal matching symbols and bonuses.
+                Automatically scans Polygon for your owned Verse Scratcher NFTs and reveals matching prizes.
               </p>
             </div>
 
-            <div className="p-6 rounded-3xl bg-[#080C1A] border border-emerald-500/10 border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
+            <div className="p-6 rounded-3xl bg-[#080C1A] border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
                 3
               </div>
               <h3 className="text-base font-extrabold text-white">Claim Rewards</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Sign the Polygon transaction in your wallet to transfer VERSE prizes directly to your address.
+                Sign the Polygon claim transaction using POL gas to transfer VERSE directly to your address.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* 2. CONNECTED DASHBOARD VIEW (VIEW MY SCRATCHERS) */}
+      {/* 2. CONNECTED DASHBOARD VIEW */}
       {status === 'CONNECTED' && account && (
         <div id="connected-scratcher-dashboard" className="space-y-8">
           {/* Top Banner & Stats Overview */}
@@ -416,7 +420,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="flex items-center gap-2.5 mb-1">
                 <VerseCoinLogo size={28} glow={true} />
                 <h2 className="text-2xl sm:text-3xl font-black text-white">
-                  My Verse Scratchers
+                  MY VERSE SCRATCHERS
                 </h2>
                 <PolygonBadge size="sm" />
               </div>
@@ -428,13 +432,13 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             {/* Action Bar */}
             <div className="flex flex-wrap items-center gap-2.5">
               <button
-                id="refresh-nfts-btn"
+                id="refresh-polygon-btn"
                 onClick={handleRefreshAll}
-                disabled={isLoadingNFTs || isRefreshingBalance}
+                disabled={isLoadingNFTs || isRefreshing}
                 className="px-3.5 py-2.5 bg-[#0D1426] hover:bg-slate-800 text-slate-300 text-xs font-bold rounded-xl border border-slate-700 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
               >
-                <RefreshCw size={14} className={isLoadingNFTs || isRefreshingBalance ? 'animate-spin text-[#00E5FF]' : ''} />
-                <span>{isLoadingNFTs ? 'Syncing Polygon...' : 'Refresh Balance & NFTs'}</span>
+                <RefreshCw size={14} className={isLoadingNFTs || isRefreshing ? 'animate-spin text-[#00E5FF]' : ''} />
+                <span>{isLoadingNFTs || isRefreshing ? 'Refreshing Polygon...' : 'Refresh Balance & NFTs'}</span>
               </button>
 
               {unscratchedCount > 0 && (
@@ -463,36 +467,48 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
 
           {/* Real On-Chain Wallet Balance Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Real VERSE Balance */}
+            {/* Real VERSE Token Balance */}
             <div className="p-5 rounded-3xl bg-[#080C1A] border border-cyan-500/40 space-y-1 relative overflow-hidden shadow-[0_0_20px_rgba(0,229,255,0.1)]">
               <div className="flex items-center justify-between text-slate-400">
                 <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-[#00E5FF]">
                   <VerseCoinLogo size={16} />
-                  Live VERSE Balance
+                  VERSE BALANCE
                 </span>
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Live syncing" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               </div>
               <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
-                <span>{account.balanceVerse || '0'}</span>
-                <span className="text-xs font-black text-[#00E5FF]">VERSE</span>
+                {account.balanceVerse === 'Loading...' ? (
+                  <span className="text-slate-400 text-lg animate-pulse">Loading...</span>
+                ) : (
+                  <>
+                    <span>{account.balanceVerse || '0'}</span>
+                    <span className="text-xs font-black text-[#00E5FF]">VERSE</span>
+                  </>
+                )}
               </div>
-              <span className="text-[11px] text-slate-400">On-Chain Polygon Balance</span>
+              <span className="text-[11px] text-slate-400">On-Chain Polygon (ERC-20)</span>
             </div>
 
-            {/* Real MATIC / POL Gas Balance */}
+            {/* Real POL / Gas Balance */}
             <div className="p-5 rounded-3xl bg-[#080C1A] border border-purple-500/40 space-y-1">
               <div className="flex items-center justify-between text-slate-400">
                 <span className="text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 text-purple-300">
                   <Coins size={14} />
-                  Live POL / Gas
+                  POL GAS BALANCE
                 </span>
                 <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
               </div>
               <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
-                <span>{account.balanceMatic || '0.0000'}</span>
-                <span className="text-xs font-bold text-purple-300">POL</span>
+                {account.balanceMatic === 'Loading...' ? (
+                  <span className="text-slate-400 text-lg animate-pulse">Loading...</span>
+                ) : (
+                  <>
+                    <span>{account.balanceMatic || '0.0000'}</span>
+                    <span className="text-xs font-bold text-purple-300">POL</span>
+                  </>
+                )}
               </div>
-              <span className="text-[11px] text-slate-400">For Polygon Gas Fees</span>
+              <span className="text-[11px] text-slate-400">Polygon Native Gas</span>
             </div>
 
             {/* Unclaimed Rewards */}
@@ -535,7 +551,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                All ({tickets.length})
+                ALL ({tickets.length})
               </button>
               <button
                 onClick={() => setActiveFilter('unscratched')}
@@ -545,7 +561,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Unscratched ({unscratchedCount})
+                UNSCRATCHED ({unscratchedCount})
               </button>
               <button
                 onClick={() => setActiveFilter('scratched')}
@@ -555,7 +571,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Ready to Claim ({readyToClaimTickets.length})
+                READY TO CLAIM ({readyToClaimTickets.length})
               </button>
               <button
                 onClick={() => setActiveFilter('claimed')}
@@ -565,21 +581,21 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Claimed ({claimedCount})
+                CLAIMED ({claimedCount})
               </button>
             </div>
 
-            {/* Quick manual token import toggle */}
+            {/* Check specific Token ID toggle */}
             <button
               onClick={() => setShowImportForm(!showImportForm)}
               className="text-xs font-bold text-slate-400 hover:text-cyan-300 flex items-center gap-1.5 cursor-pointer"
             >
               <PlusCircle size={14} />
-              <span>{showImportForm ? 'Close Token Check' : 'Check / Add Specific Token ID'}</span>
+              <span>{showImportForm ? 'Close Token Check' : 'CHECK / ADD SPECIFIC TOKEN ID'}</span>
             </button>
           </div>
 
-          {/* Manual Token ID Check Form */}
+          {/* Specific Token ID Query Form */}
           {showImportForm && (
             <form
               onSubmit={handleImportToken}
@@ -589,7 +605,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
                   type="number"
-                  placeholder="Enter Verse Scratcher Token ID (e.g., 1042)"
+                  placeholder="Enter Verse Scratcher Token ID on Polygon (e.g., 1176)"
                   value={customTokenInput}
                   onChange={(e) => setCustomTokenInput(e.target.value)}
                   className="w-full bg-[#0D1426] border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-400"
@@ -597,20 +613,45 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </div>
               <button
                 type="submit"
-                className="w-full sm:w-auto px-5 py-2 bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs rounded-xl shadow cursor-pointer transition-all active:scale-95"
+                disabled={isCheckingToken}
+                className="w-full sm:w-auto px-5 py-2 bg-[#00E5FF] hover:bg-[#00cce6] disabled:opacity-50 text-black font-black text-xs rounded-xl shadow cursor-pointer transition-all active:scale-95 flex items-center justify-center gap-1.5"
               >
-                LOAD TOKEN
+                {isCheckingToken ? (
+                  <>
+                    <RefreshCw size={14} className="animate-spin" />
+                    <span>CHECKING ON POLYGON...</span>
+                  </>
+                ) : (
+                  <span>CHECK / ADD TOKEN</span>
+                )}
               </button>
             </form>
           )}
 
-          {/* Real NFTs Grid or Empty State */}
-          {isLoadingNFTs ? (
+          {/* Error Banner if RPC fail */}
+          {loadError && (
+            <div className="p-4 bg-red-950/60 border border-red-500/40 rounded-2xl flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-xs text-red-200">
+                <AlertTriangle size={16} className="text-red-400 shrink-0" />
+                <span>{loadError}</span>
+              </div>
+              <button
+                onClick={handleRefreshAll}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold text-xs rounded-xl shadow transition-all active:scale-95 flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <RefreshCw size={13} />
+                RE-SCAN POLYGON
+              </button>
+            </div>
+          )}
+
+          {/* Real NFTs Grid or Accurate Empty States */}
+          {isLoadingNFTs && tickets.length === 0 ? (
             <div className="p-16 text-center bg-[#080C1A] rounded-3xl border border-slate-800 space-y-4">
               <RefreshCw size={36} className="mx-auto text-[#00E5FF] animate-spin" />
-              <h4 className="text-lg font-black text-white">Scanning Polygon Network...</h4>
+              <h4 className="text-lg font-black text-white">SCANNING POLYGON...</h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Checking Verse Scratcher NFT contracts for address {account.address}.
+                Finding your Verse Scratcher NFTs on Polygon Mainnet (Chain ID 137)...
               </p>
             </div>
           ) : filteredTickets.length > 0 ? (
@@ -625,6 +666,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               ))}
             </div>
           ) : (
+            /* Specific Empty State per active filter */
             <div
               id="empty-nfts-card"
               className="p-14 text-center bg-[#080C1A] rounded-3xl border border-cyan-500/30 shadow-[0_0_30px_rgba(0,229,255,0.1)] space-y-4"
@@ -632,14 +674,37 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="w-16 h-16 mx-auto rounded-2xl bg-[#0D1426] border border-cyan-500/30 flex items-center justify-center">
                 <VerseCoinLogo size={36} glow={true} />
               </div>
-              <h4 className="text-xl font-black text-white">
-                {activeFilter === 'all'
-                  ? 'No Verse Scratcher NFTs Found in This Wallet'
-                  : `No ${activeFilter.toUpperCase()} Scratchers Found`}
-              </h4>
-              <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
-                Your connected address <span className="font-mono text-cyan-300 font-bold">{account.address}</span> has 0 Verse Scratcher NFTs currently listed in this category on Polygon.
-              </p>
+
+              {activeFilter === 'unscratched' ? (
+                <>
+                  <h4 className="text-xl font-black text-white">NO UNCLAIMED SCRATCHERS FOUND</h4>
+                  <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                    You don't currently have any unclaimed Verse Scratcher NFTs.
+                  </p>
+                </>
+              ) : activeFilter === 'scratched' ? (
+                <>
+                  <h4 className="text-xl font-black text-white">NO READY TO CLAIM SCRATCHERS FOUND</h4>
+                  <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                    Scratch your tickets first to reveal prizes and get them ready to claim.
+                  </p>
+                </>
+              ) : activeFilter === 'claimed' ? (
+                <>
+                  <h4 className="text-xl font-black text-white">NO CLAIMED SCRATCHERS FOUND</h4>
+                  <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                    You don't have any claimed Verse Scratcher NFTs yet.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <h4 className="text-xl font-black text-white">NO VERSE SCRATCHERS FOUND</h4>
+                  <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                    Your connected Polygon address does not currently have any Verse Scratcher NFTs.
+                  </p>
+                </>
+              )}
+
               <div className="pt-2 flex flex-wrap justify-center gap-3">
                 <button
                   onClick={handleRefreshAll}
@@ -651,7 +716,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   onClick={() => setShowImportForm(true)}
                   className="px-5 py-2.5 bg-[#0D1426] hover:bg-slate-800 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 cursor-pointer"
                 >
-                  Enter Specific Token ID
+                  ENTER SPECIFIC TOKEN ID
                 </button>
               </div>
             </div>

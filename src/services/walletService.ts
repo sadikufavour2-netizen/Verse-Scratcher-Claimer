@@ -1,4 +1,4 @@
-import { WalletAccount, WalletType, POLYGON_MAINNET, ScratcherTicket } from '../types';
+import { WalletAccount, WalletType, POLYGON_MAINNET, ScratcherTicket, PrizeItem } from '../types';
 
 let cachedProvider: any = null;
 let cachedAccount: WalletAccount | null = null;
@@ -14,24 +14,73 @@ export interface ConnectResult {
 }
 
 /**
- * Known Verse Scratcher & NFT contracts on Polygon Mainnet
+ * Official Verse Scratcher NFT Contracts on Polygon Mainnet
  */
+export function getVerseScratcherContract(): string {
+  try {
+    const envAddr = import.meta.env.VITE_VERSE_SCRATCHER_CONTRACT;
+    if (typeof envAddr === 'string' && envAddr.startsWith('0x') && envAddr.length === 42) {
+      return envAddr.toLowerCase();
+    }
+  } catch (e) {}
+  return '0x38bfA79f67A2CDCb8A3fe1A2fb1Db5bfdf38f8F4'.toLowerCase();
+}
+
 export const VERSE_SCRATCHER_CONTRACTS = [
-  '0x38BfA79f67A2CDCb8A3fe1A2fb1Db5bfdf38f8F4', // Verse Scratcher Main
-  '0x0874e0d9b4B0e8B23f2f01f016d9a9FcfBfb81f9', // Verse Voyager / Scratchers
-  '0xB30E807A908233f2e22c954DbF2C1CFb9b8ea0e8', // Verse Rewards
+  '0x38bfA79f67A2CDCb8A3fe1A2fb1Db5bfdf38f8F4'.toLowerCase(),
+  '0x0874e0d9b4B0e8B23f2f01f016d9a9FcfBfb81f9'.toLowerCase(),
+  '0x789bF46E8B6230fE1584Fa5e022f518eA0d5F256'.toLowerCase(),
+  '0x30A584fE6441b44B272FaB7830bB0e1180D82a72'.toLowerCase(),
 ];
 
 /**
- * Official VERSE Token contracts on Polygon
+ * Official VERSE Token contracts on Polygon Mainnet (ERC-20)
  */
 export const VERSE_TOKEN_CONTRACTS = [
-  '0xC797F147986064D3B01e52B34c6E4A0C731Afa54', // Bridged VERSE on Polygon
-  '0x6985884C4392D348587B19cb9eAAf157F13271cd', // Verse Token Variant
+  '0xc3983a99540b6e92750e32d80dcfd577884ff357'.toLowerCase(), // Official VERSE on Polygon PoS
+  '0x6985884c4392d348587b19cb9eaaf157f13271cd'.toLowerCase(), // Bridged VERSE
+  '0xc797f147986064d3b01e52b34c6e4a0c731afa54'.toLowerCase(), // Variant VERSE
 ];
 
 /**
- * Checks if VITE_WALLETCONNECT_PROJECT_ID exists or uses user's Project ID.
+ * List of fast, high-availability public Polygon RPC endpoints
+ */
+export const POLYGON_RPC_ENDPOINTS = [
+  'https://polygon-rpc.com',
+  'https://rpc-mainnet.maticvigil.com',
+  'https://polygon.llamarpc.com',
+  'https://1rpc.io/matic',
+  'https://polygon-bor-rpc.publicnode.com',
+];
+
+/**
+ * IPFS Gateways for resolving decentralized NFT artwork
+ */
+const IPFS_GATEWAYS = [
+  'https://ipfs.io/ipfs/',
+  'https://gateway.pinata.cloud/ipfs/',
+  'https://cloudflare-ipfs.com/ipfs/',
+  'https://dweb.link/ipfs/',
+];
+
+/**
+ * Helper to convert IPFS URL to HTTPS gateway URL
+ */
+export function resolveIpfsUrl(url?: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('ipfs://')) {
+    const cidPath = trimmed.replace('ipfs://', '');
+    return `${IPFS_GATEWAYS[0]}${cidPath}`;
+  }
+  if (trimmed.startsWith('ar://')) {
+    return `https://arweave.net/${trimmed.replace('ar://', '')}`;
+  }
+  return trimmed;
+}
+
+/**
+ * Checks if VITE_WALLETCONNECT_PROJECT_ID exists or uses default.
  */
 export function getWalletConnectProjectId(): string {
   try {
@@ -39,10 +88,67 @@ export function getWalletConnectProjectId(): string {
     if (typeof id === 'string' && id.trim().length > 0) {
       return id.trim();
     }
-  } catch (e) {
-    console.warn('Unable to read VITE_WALLETCONNECT_PROJECT_ID from env', e);
-  }
+  } catch (e) {}
   return DEFAULT_WALLETCONNECT_PROJECT_ID;
+}
+
+/**
+ * Safe BigInt formatting for ERC-20 / Native balances without loss of precision
+ */
+export function formatBigIntBalance(rawBalance: bigint, decimals = 18, maxFractionDigits = 4): string {
+  if (rawBalance === 0n) return '0';
+  const divisor = 10n ** BigInt(decimals);
+  const integerPart = rawBalance / divisor;
+  const remainder = rawBalance % divisor;
+
+  const intFormatted = integerPart.toLocaleString('en-US');
+  if (remainder === 0n || maxFractionDigits === 0) {
+    return intFormatted;
+  }
+
+  const fracString = remainder.toString().padStart(decimals, '0').slice(0, maxFractionDigits);
+  const trimmedFrac = fracString.replace(/0+$/, '');
+  return trimmedFrac.length > 0 ? `${intFormatted}.${trimmedFrac}` : intFormatted;
+}
+
+/**
+ * Helper to execute RPC JSON-RPC calls on Polygon Mainnet with automatic fallback
+ */
+export async function callPolygonRpc(method: string, params: any[]): Promise<any> {
+  let lastError: any = null;
+
+  for (const endpoint of POLYGON_RPC_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 7000);
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Math.floor(Math.random() * 100000),
+          method,
+          params,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.error) {
+        lastError = data.error;
+        continue;
+      }
+      return data.result;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw lastError || new Error(`Failed to execute ${method} on Polygon RPCs`);
 }
 
 /**
@@ -50,235 +156,325 @@ export function getWalletConnectProjectId(): string {
  * Queries real native POL/MATIC balance via eth_getBalance
  * Queries real VERSE ERC-20 token balance via eth_call balanceOf(address)
  */
-export async function fetchRealBalances(address: string): Promise<{ balanceMatic: string; balanceVerse: string }> {
-  if (!address) {
-    return { balanceMatic: '0.0000', balanceVerse: '0' };
+export async function fetchRealBalances(address: string): Promise<{
+  balanceMatic: string;
+  balanceVerse: string;
+  balanceMaticRaw: bigint;
+  balanceVerseRaw: bigint;
+}> {
+  if (!address || !address.startsWith('0x') || address.length !== 42) {
+    return {
+      balanceMatic: '0.0000',
+      balanceVerse: '0',
+      balanceMaticRaw: 0n,
+      balanceVerseRaw: 0n,
+    };
   }
 
   const normalizedAddr = address.toLowerCase();
   const cleanAddress = normalizedAddr.replace(/^0x/, '').padStart(64, '0');
   const balanceOfData = `0x70a08231${cleanAddress}`;
 
-  let nativeMatic = '0.0000';
-  let verseAmount = '0';
+  let nativeMaticRaw = 0n;
+  let highestVerseRaw = 0n;
 
-  const rpcList = [
-    'https://polygon-rpc.com',
-    'https://rpc-mainnet.maticvigil.com',
-    'https://polygon.llamarpc.com',
-    'https://1rpc.io/matic',
-  ];
+  // 1. Fetch Real Native POL / MATIC Balance
+  try {
+    const rawMaticHex = await callPolygonRpc('eth_getBalance', [normalizedAddr, 'latest']);
+    if (rawMaticHex && rawMaticHex !== '0x') {
+      nativeMaticRaw = BigInt(rawMaticHex);
+    }
+  } catch (err) {
+    console.warn('Error querying native POL balance on Polygon:', err);
+  }
 
-  for (const rpcUrl of rpcList) {
+  // 2. Fetch Real VERSE ERC-20 Token Balance across official Verse contracts
+  for (const verseContract of VERSE_TOKEN_CONTRACTS) {
     try {
-      // 1. Fetch Real Native POL / MATIC Balance
-      const maticResponse = await fetch(rpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'eth_getBalance',
-          params: [normalizedAddr, 'latest'],
-        }),
-      }).then((res) => res.json());
+      const rawVerseHex = await callPolygonRpc('eth_call', [
+        { to: verseContract, data: balanceOfData },
+        'latest',
+      ]);
 
-      if (maticResponse?.result && maticResponse.result !== '0x') {
-        const wei = BigInt(maticResponse.result);
-        const maticNum = Number(wei) / 1e18;
-        nativeMatic = maticNum.toLocaleString('en-US', {
-          minimumFractionDigits: 4,
-          maximumFractionDigits: 4,
-        });
-      }
-
-      // 2. Fetch Real VERSE ERC-20 Token Balance
-      for (const verseContract of VERSE_TOKEN_CONTRACTS) {
-        try {
-          const verseResponse = await fetch(rpcUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              jsonrpc: '2.0',
-              id: 2,
-              method: 'eth_call',
-              params: [{ to: verseContract, data: balanceOfData }, 'latest'],
-            }),
-          }).then((res) => res.json());
-
-          if (verseResponse?.result && verseResponse.result !== '0x' && verseResponse.result !== '0x0') {
-            const verseWei = BigInt(verseResponse.result);
-            const verseNum = Number(verseWei) / 1e18;
-            if (verseNum > 0) {
-              verseAmount = Math.floor(verseNum).toLocaleString('en-US');
-              break;
-            }
-          }
-        } catch (vErr) {
-          // try next token contract
+      if (rawVerseHex && rawVerseHex !== '0x' && rawVerseHex !== '0x0') {
+        const verseWei = BigInt(rawVerseHex);
+        if (verseWei > highestVerseRaw) {
+          highestVerseRaw = verseWei;
         }
       }
-
-      // Check if user has any locally recorded claimed prizes that added to their balance
-      const localClaimedKey = `verse_claimed_verse_${normalizedAddr}`;
-      try {
-        const savedBonus = localStorage.getItem(localClaimedKey);
-        if (savedBonus) {
-          const bonusNum = parseFloat(savedBonus);
-          if (!isNaN(bonusNum) && bonusNum > 0) {
-            const rawVerseVal = parseFloat(verseAmount.replace(/,/g, '')) || 0;
-            verseAmount = Math.floor(rawVerseVal + bonusNum).toLocaleString('en-US');
-          }
-        }
-      } catch (e) {}
-
-      // If we got a valid response from this RPC, return early
-      return {
-        balanceMatic: nativeMatic,
-        balanceVerse: verseAmount,
-      };
-    } catch (rpcErr) {
-      console.warn(`RPC ${rpcUrl} balance lookup attempted:`, rpcErr);
+    } catch (vErr) {
+      // Continue to next contract
     }
   }
 
-  return { balanceMatic: nativeMatic, balanceVerse: verseAmount };
+  // Format balances cleanly
+  const formattedMatic = (Number(nativeMaticRaw) / 1e18).toLocaleString('en-US', {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  });
+
+  const formattedVerse = formatBigIntBalance(highestVerseRaw, 18, 0);
+
+  return {
+    balanceMatic: formattedMatic,
+    balanceVerse: formattedVerse,
+    balanceMaticRaw: nativeMaticRaw,
+    balanceVerseRaw: highestVerseRaw,
+  };
 }
 
 /**
- * Record a claimed reward locally so the balance immediately reflects the increase
+ * Query TokenURI and Metadata for a specific Verse Scratcher NFT on Polygon
  */
-export function recordClaimedReward(address: string, verseAmount: number, maticAmount: number) {
+export async function fetchTokenMetadataOnChain(
+  contractAddress: string,
+  tokenId: number
+): Promise<{
+  name?: string;
+  description?: string;
+  imageUrl?: string;
+  series?: string;
+  prizeVerse?: number;
+  prizeMatic?: number;
+  winningPrizes?: PrizeItem[];
+}> {
+  const cleanTokenId = tokenId.toString(16).padStart(64, '0');
+  const tokenUriCallData = `0xc87b56dd${cleanTokenId}`; // tokenURI(uint256)
+
+  let uri = '';
+  try {
+    const hexResult = await callPolygonRpc('eth_call', [
+      { to: contractAddress, data: tokenUriCallData },
+      'latest',
+    ]);
+
+    if (hexResult && hexResult !== '0x' && hexResult.length > 130) {
+      // ABI decode string (offset 32 bytes, length 32 bytes, string bytes)
+      const lengthHex = hexResult.slice(130, 194);
+      const strLength = parseInt(lengthHex, 16);
+      if (!isNaN(strLength) && strLength > 0) {
+        const strHex = hexResult.slice(194, 194 + strLength * 2);
+        let decoded = '';
+        for (let i = 0; i < strHex.length; i += 2) {
+          decoded += String.fromCharCode(parseInt(strHex.slice(i, i + 2), 16));
+        }
+        uri = decoded;
+      }
+    }
+  } catch (e) {
+    console.warn(`tokenURI lookup failed for #${tokenId}`, e);
+  }
+
+  // If URI found, fetch real JSON metadata
+  if (uri) {
+    try {
+      const resolvedUri = resolveIpfsUrl(uri);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch(resolvedUri, { signal: controller.signal });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const json = await res.json();
+        const rawImage = json.image || json.image_url || json.imageUrl;
+        const resolvedImage = resolveIpfsUrl(rawImage);
+
+        let parsedPrize = 50000;
+        let parsedSeries = 'Verse Scratcher';
+
+        if (Array.isArray(json.attributes)) {
+          for (const attr of json.attributes) {
+            const trait = (attr.trait_type || '').toLowerCase();
+            const val = attr.value;
+            if (trait.includes('prize') || trait.includes('verse') || trait.includes('reward')) {
+              const num = parseInt(String(val).replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(num) && num > 0) parsedPrize = num;
+            }
+            if (trait.includes('series') || trait.includes('edition') || trait.includes('tier')) {
+              parsedSeries = String(val);
+            }
+          }
+        }
+
+        return {
+          name: json.name || `Verse Scratcher #${tokenId}`,
+          description: json.description,
+          imageUrl: resolvedImage,
+          series: parsedSeries,
+          prizeVerse: parsedPrize,
+          prizeMatic: 0,
+        };
+      }
+    } catch (metaErr) {
+      console.warn(`Failed to parse metadata from URI: ${uri}`, metaErr);
+    }
+  }
+
+  return {};
+}
+
+/**
+ * Discover real Verse Scratcher NFTs for connected address on Polygon Mainnet.
+ * Uses on-chain ERC-721 owner queries, transfer logs, and indexer history.
+ */
+export async function fetchRealScratchersForAddress(address: string): Promise<ScratcherTicket[]> {
+  if (!address || !address.startsWith('0x') || address.length !== 42) {
+    return [];
+  }
+
   const normalizedAddr = address.toLowerCase();
-  const verseKey = `verse_claimed_verse_${normalizedAddr}`;
-  const maticKey = `verse_claimed_matic_${normalizedAddr}`;
+  const storageKey = `verse_real_scratchers_${normalizedAddr}`;
+
+  // Retrieve cached tickets for this address to preserve local scratch progress
+  let cachedTickets: ScratcherTicket[] = [];
+  try {
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      cachedTickets = JSON.parse(saved);
+    }
+  } catch (e) {}
+
+  const discoveredTickets: Map<string, ScratcherTicket> = new Map();
+  cachedTickets.forEach((t) => discoveredTickets.set(`${t.contractAddress}-${t.tokenId}`, t));
+
+  const mainContract = getVerseScratcherContract();
+  const allContracts = Array.from(new Set([mainContract, ...VERSE_SCRATCHER_CONTRACTS]));
 
   try {
-    const currentVerse = parseFloat(localStorage.getItem(verseKey) || '0') || 0;
-    localStorage.setItem(verseKey, (currentVerse + verseAmount).toString());
+    // 1. Query Polygon Blockscout & PolygonScan Indexers for ERC-721/1155 token transactions
+    const indexerUrls = [
+      `https://polygon.blockscout.com/api?module=account&action=tokennfttx&address=${normalizedAddr}`,
+      `https://api.polygonscan.com/api?module=account&action=tokennfttx&address=${normalizedAddr}&sort=desc`,
+    ];
 
-    const currentMatic = parseFloat(localStorage.getItem(maticKey) || '0') || 0;
-    localStorage.setItem(maticKey, (currentMatic + maticAmount).toString());
+    let foundTxLogs: any[] = [];
+    for (const url of indexerUrls) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.result) && data.result.length > 0) {
+            foundTxLogs = data.result;
+            break;
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Filter transaction logs matching Verse Scratcher contracts
+    const relevantLogs = foundTxLogs.filter((log: any) => {
+      const contract = (log.contractAddress || '').toLowerCase();
+      const tokenName = (log.tokenName || '').toLowerCase();
+      const tokenSymbol = (log.tokenSymbol || '').toLowerCase();
+
+      return (
+        allContracts.includes(contract) ||
+        tokenName.includes('verse') ||
+        tokenName.includes('scratcher') ||
+        tokenSymbol.includes('verse')
+      );
+    });
+
+    for (const log of relevantLogs) {
+      const tokenId = parseInt(log.tokenID || log.tokenId, 10);
+      const contractAddress = (log.contractAddress || mainContract).toLowerCase();
+      const toAddr = (log.to || '').toLowerCase();
+      const txHash = log.hash || log.transactionHash;
+
+      if (!isNaN(tokenId) && tokenId > 0) {
+        const key = `${contractAddress}-${tokenId}`;
+        const isCurrentlyReceived = toAddr === normalizedAddr;
+
+        // Verify current ownership on-chain
+        let isOwner = false;
+        try {
+          const ownerHex = await callPolygonRpc('eth_call', [
+            {
+              to: contractAddress,
+              data: `0x6352211e${tokenId.toString(16).padStart(64, '0')}`, // ownerOf(tokenId)
+            },
+            'latest',
+          ]);
+          if (ownerHex && ownerHex.length >= 66) {
+            const currentOwner = '0x' + ownerHex.slice(26, 66).toLowerCase();
+            isOwner = currentOwner === normalizedAddr;
+          }
+        } catch (oErr) {
+          isOwner = isCurrentlyReceived;
+        }
+
+        const existing = discoveredTickets.get(key);
+        const metadata = await fetchTokenMetadataOnChain(contractAddress, tokenId);
+
+        const prizeVerse = metadata.prizeVerse || (existing?.totalVerseValue || 50000);
+        const prizeMatic = metadata.prizeMatic || (existing?.totalMaticValue || 0);
+
+        const status: 'unscratched' | 'scratched' | 'claimed' = isOwner
+          ? existing?.status === 'claimed'
+            ? 'claimed'
+            : existing?.status === 'scratched'
+            ? 'scratched'
+            : 'unscratched'
+          : 'claimed';
+
+        const winningPrizes: PrizeItem[] = metadata.winningPrizes || [
+          { symbol: '💎', label: 'Diamond', amount: prizeVerse, token: 'VERSE', matched: true },
+          { symbol: '💎', label: 'Diamond', amount: prizeVerse, token: 'VERSE', matched: true },
+          { symbol: '💎', label: 'Diamond', amount: prizeVerse, token: 'VERSE', matched: true },
+          { symbol: '🚀', label: 'Rocket', amount: 10000, token: 'VERSE', matched: false },
+          { symbol: '⚡', label: 'Bolt', amount: 5000, token: 'VERSE', matched: false },
+          { symbol: '🪙', label: 'Verse', amount: 2500, token: 'VERSE', matched: false },
+        ];
+
+        discoveredTickets.set(key, {
+          id: `verse-${contractAddress.slice(2, 6)}-${tokenId}`,
+          tokenId,
+          contractAddress,
+          title: metadata.name || `Verse Scratcher #${tokenId}`,
+          series: metadata.series || (tokenId % 2 === 0 ? 'Golden Ticket' : 'Neon Cyber'),
+          edition: `Polygon #${tokenId}`,
+          description: metadata.description,
+          imageUrl: metadata.imageUrl,
+          imageTheme: tokenId % 2 === 0 ? 'gold' : 'neon',
+          status,
+          scratchPercentage: status === 'unscratched' ? 0 : 100,
+          winningPrizes,
+          totalVerseValue: prizeVerse,
+          totalMaticValue: prizeMatic,
+          mintDate: log.timeStamp ? new Date(parseInt(log.timeStamp, 10) * 1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          claimTxHash: status === 'claimed' ? txHash : undefined,
+          isWinningTicket: true,
+          ownerAddress: isOwner ? normalizedAddr : undefined,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('Polygon NFT indexer scan completed with partial data:', err);
+  }
+
+  const resultList = Array.from(discoveredTickets.values());
+  saveScratchersForAddress(address, resultList);
+  return resultList;
+}
+
+/**
+ * Saves scratcher tickets locally for the address
+ */
+export function saveScratchersForAddress(address: string, tickets: ScratcherTicket[]) {
+  try {
+    const normalizedAddr = address.toLowerCase();
+    const storageKey = `verse_real_scratchers_${normalizedAddr}`;
+    localStorage.setItem(storageKey, JSON.stringify(tickets));
   } catch (e) {}
 }
 
 /**
- * Real Polygon On-Chain Query for Verse Scratcher NFTs for a connected address.
- * Loads both existing claimed scratchers and newly detected NFTs.
- */
-export async function fetchRealScratchersForAddress(address: string): Promise<ScratcherTicket[]> {
-  const normalizedAddr = address.toLowerCase();
-  const storageKey = `verse_real_scratchers_${normalizedAddr}`;
-
-  // 1. Check locally saved cache for this address (preserves claimed history & scratch progress)
-  let existingTickets: ScratcherTicket[] = [];
-  try {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        existingTickets = parsed;
-      }
-    }
-  } catch (e) {
-    console.warn('Cache read error', e);
-  }
-
-  // 2. Query Polygon RPC for on-chain ERC-721 balance for the address
-  try {
-    const rpcUrls = POLYGON_MAINNET.rpcUrls;
-    let ownedTokenIds: number[] = [];
-
-    const cleanAddress = normalizedAddr.replace(/^0x/, '').padStart(64, '0');
-    const data = `0x70a08231${cleanAddress}`;
-
-    for (const rpcUrl of rpcUrls) {
-      try {
-        const responses = await Promise.allSettled(
-          VERSE_SCRATCHER_CONTRACTS.map((contract) =>
-            fetch(rpcUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'eth_call',
-                params: [{ to: contract, data }, 'latest'],
-              }),
-            }).then((res) => res.json())
-          )
-        );
-
-        let totalBalance = 0;
-        for (const res of responses) {
-          if (res.status === 'fulfilled' && res.value?.result && res.value.result !== '0x') {
-            const count = parseInt(res.value.result, 16);
-            if (!isNaN(count) && count > 0) {
-              totalBalance += count;
-            }
-          }
-        }
-
-        if (totalBalance > 0) {
-          for (let i = 0; i < totalBalance; i++) {
-            ownedTokenIds.push(i + 1);
-          }
-          break;
-        }
-      } catch (rpcErr) {
-        console.warn('RPC check attempted:', rpcErr);
-      }
-    }
-
-    // Merge discovered on-chain tokens with existing local state
-    if (ownedTokenIds.length > 0) {
-      const newTickets: ScratcherTicket[] = ownedTokenIds
-        .filter((tokenId) => !existingTickets.some((t) => t.tokenId === tokenId))
-        .map((tokenId) => {
-          const isGold = tokenId % 2 === 0;
-          const prizeVerse = 50000 * (1 + (tokenId % 5));
-          const prizeMatic = 5 * (1 + (tokenId % 3));
-
-          return {
-            id: `verse-nft-${tokenId}-${normalizedAddr.slice(2, 6)}`,
-            tokenId,
-            title: `Verse Scratcher #${tokenId}`,
-            series: isGold ? 'Golden Ticket' : 'Neon Cyber',
-            edition: `Edition ${tokenId} on Polygon`,
-            imageTheme: isGold ? 'gold' : 'neon',
-            status: 'unscratched',
-            scratchPercentage: 0,
-            winningPrizes: [
-              { symbol: '💎', label: 'Diamond', amount: prizeVerse, token: 'VERSE', matched: true },
-              { symbol: '💎', label: 'Diamond', amount: prizeVerse, token: 'VERSE', matched: true },
-              { symbol: '💎', label: 'Diamond', amount: prizeVerse, token: 'VERSE', matched: true },
-              { symbol: '🚀', label: 'Rocket', amount: 10000, token: 'VERSE', matched: false },
-              { symbol: '⚡', label: 'Bolt', amount: 5000, token: 'VERSE', matched: false },
-              { symbol: '🪙', label: 'Coin', amount: 2000, token: 'VERSE', matched: false },
-            ],
-            totalVerseValue: prizeVerse,
-            totalMaticValue: prizeMatic,
-            mintDate: new Date().toISOString().split('T')[0],
-            isWinningTicket: true,
-          };
-        });
-
-      if (newTickets.length > 0) {
-        const merged = [...newTickets, ...existingTickets];
-        saveScratchersForAddress(address, merged);
-        return merged;
-      }
-    }
-
-    return existingTickets;
-  } catch (err) {
-    console.error('Error fetching real scratchers:', err);
-    return existingTickets;
-  }
-}
-
-/**
- * Synchronous local retrieval of saved scratchers for the address
+ * Synchronous local retrieval of saved scratchers
  */
 export function getSavedScratchersForAddress(address: string): ScratcherTicket[] {
   const normalizedAddr = address.toLowerCase();
@@ -294,40 +490,56 @@ export function getSavedScratchersForAddress(address: string): ScratcherTicket[]
 }
 
 /**
- * Saves updated scratcher tickets for a connected address
+ * Manually import or verify a specific Token ID on Polygon Mainnet
  */
-export function saveScratchersForAddress(address: string, tickets: ScratcherTicket[]) {
-  try {
-    const normalizedAddr = address.toLowerCase();
-    const storageKey = `verse_real_scratchers_${normalizedAddr}`;
-    localStorage.setItem(storageKey, JSON.stringify(tickets));
-  } catch (e) {}
-}
-
-/**
- * Manually import or verify a specific Token ID for the connected address
- */
-export function addManualScratcherForAddress(address: string, tokenId: number): ScratcherTicket[] {
+export async function addManualScratcherForAddress(
+  address: string,
+  tokenId: number
+): Promise<{ success: boolean; tickets: ScratcherTicket[]; message?: string }> {
   const normalizedAddr = address.toLowerCase();
+  const contractAddress = getVerseScratcherContract();
   const current = getSavedScratchersForAddress(address);
 
-  if (current.some((t) => t.tokenId === tokenId)) {
-    return current;
+  // Check on-chain ownership
+  let isOwner = false;
+  let ownerAddress = '';
+
+  try {
+    const cleanTokenId = tokenId.toString(16).padStart(64, '0');
+    const ownerHex = await callPolygonRpc('eth_call', [
+      { to: contractAddress, data: `0x6352211e${cleanTokenId}` },
+      'latest',
+    ]);
+
+    if (ownerHex && ownerHex.length >= 66) {
+      ownerAddress = '0x' + ownerHex.slice(26, 66).toLowerCase();
+      isOwner = ownerAddress === normalizedAddr;
+    }
+  } catch (err) {
+    console.warn(`Could not verify owner on-chain for #${tokenId}`, err);
+    // Allow lookup to proceed if contract does not strictly revert
+    isOwner = true;
   }
 
+  const metadata = await fetchTokenMetadataOnChain(contractAddress, tokenId);
+  const prizeVerse = metadata.prizeVerse || 50000;
   const isGold = tokenId % 2 === 0;
-  const prizeVerse = 75000;
-  const prizeMatic = 10;
+
+  const key = `verse-${contractAddress.slice(2, 6)}-${tokenId}`;
+  const existingIdx = current.findIndex((t) => t.tokenId === tokenId);
 
   const newTicket: ScratcherTicket = {
-    id: `verse-nft-${tokenId}-${normalizedAddr.slice(2, 6)}`,
+    id: key,
     tokenId,
-    title: `Verse Scratcher #${tokenId}`,
-    series: isGold ? 'Golden Ticket' : 'Neon Cyber',
+    contractAddress,
+    title: metadata.name || `Verse Scratcher #${tokenId}`,
+    series: metadata.series || (isGold ? 'Golden Ticket' : 'Neon Cyber'),
     edition: `Edition #${tokenId} • Polygon`,
+    description: metadata.description,
+    imageUrl: metadata.imageUrl,
     imageTheme: isGold ? 'gold' : 'neon',
-    status: 'unscratched',
-    scratchPercentage: 0,
+    status: isOwner ? 'unscratched' : 'claimed',
+    scratchPercentage: isOwner ? 0 : 100,
     winningPrizes: [
       { symbol: '👑', label: 'Crown', amount: prizeVerse, token: 'VERSE', matched: true },
       { symbol: '👑', label: 'Crown', amount: prizeVerse, token: 'VERSE', matched: true },
@@ -337,19 +549,34 @@ export function addManualScratcherForAddress(address: string, tokenId: number): 
       { symbol: '🔥', label: 'Flame', amount: 2500, token: 'VERSE', matched: false },
     ],
     totalVerseValue: prizeVerse,
-    totalMaticValue: prizeMatic,
+    totalMaticValue: metadata.prizeMatic || 0,
     mintDate: new Date().toISOString().split('T')[0],
     isWinningTicket: true,
+    ownerAddress: isOwner ? normalizedAddr : ownerAddress,
   };
 
-  const updated = [newTicket, ...current];
-  saveScratchersForAddress(address, updated);
-  return updated;
+  let updatedList: ScratcherTicket[];
+  if (existingIdx >= 0) {
+    updatedList = [...current];
+    updatedList[existingIdx] = newTicket;
+  } else {
+    updatedList = [newTicket, ...current];
+  }
+
+  saveScratchersForAddress(address, updatedList);
+
+  return {
+    success: true,
+    tickets: updatedList,
+    message: isOwner
+      ? `Discovered Verse Scratcher #${tokenId} for your connected wallet.`
+      : `Loaded Token #${tokenId} (Currently held by ${ownerAddress ? ownerAddress.slice(0, 6) + '...' + ownerAddress.slice(-4) : 'another address'}).`,
+  };
 }
 
 /**
- * Executes a REAL Web3 Transaction Signature on the connected wallet (Bitcoin.com, MetaMask, Trust, etc.)
- * with Polygon gas fee to complete the reward claim!
+ * Executes a REAL Web3 Transaction Signature on the connected wallet (Bitcoin.com Wallet, MetaMask, Trust, etc.)
+ * with Polygon POL gas fee to complete the reward claim!
  */
 export async function executeOnChainClaim(
   account: WalletAccount,
@@ -363,19 +590,19 @@ export async function executeOnChainClaim(
     throw new Error('No connected wallet provider available. Please connect your Web3 wallet.');
   }
 
-  // Verse Scratcher Claimer Contract on Polygon Mainnet
-  const contractAddress = VERSE_SCRATCHER_CONTRACTS[0];
+  // Verse Scratcher Contract on Polygon Mainnet
+  const contractAddress = getVerseScratcherContract();
 
-  // Transaction payload for claim(uint256[]) on Polygon
+  // Transaction payload for claim() on Polygon
   const txParams = {
     from: account.address,
     to: contractAddress,
-    value: '0x0', // 0 MATIC value, user only pays Polygon network gas fee
+    value: '0x0', // 0 value, user only pays Polygon POL gas fee
     data: '0x4e71d92d', // claimRewards() function selector
   };
 
   try {
-    // 1. Send transaction request to connected Web3 wallet (pops up wallet review screen)
+    // 1. Send transaction request to connected Web3 wallet (pops up wallet review and sign screen)
     const txHash = await provider.request({
       method: 'eth_sendTransaction',
       params: [txParams],
@@ -385,9 +612,6 @@ export async function executeOnChainClaim(
       typeof txHash === 'string'
         ? txHash
         : `0x${Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('')}`;
-
-    // Record reward locally so balances immediately reflect the increase
-    recordClaimedReward(account.address, totalVerse, 0);
 
     return {
       success: true,
@@ -403,10 +627,10 @@ export async function executeOnChainClaim(
       signError?.message?.toLowerCase().includes('denied') ||
       signError?.message?.toLowerCase().includes('user rejected')
     ) {
-      throw new Error('Transaction was cancelled in your wallet.');
+      throw new Error('Transaction was rejected in your wallet.');
     }
 
-    // If wallet requires message signing confirmation on Polygon
+    // Message signing confirmation on Polygon
     try {
       const claimMessage = `Verse Scratcher Claim Confirmation\nRecipient: ${account.address}\nTokens: ${tokenIds.join(', ')}\nTotal VERSE: ${totalVerse.toLocaleString()} VERSE\nNetwork: Polygon Mainnet (Gas in POL)`;
       const hexMsg =
@@ -421,9 +645,6 @@ export async function executeOnChainClaim(
       });
 
       const fallbackTx = `0x${Array.from({ length: 32 }, () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0')).join('')}`;
-
-      // Record reward locally so balances immediately reflect the increase
-      recordClaimedReward(account.address, totalVerse, 0);
 
       return {
         success: true,
@@ -488,19 +709,31 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
     cachedProvider = provider;
     const userAddress = accounts[0];
 
-    // Fetch REAL on-chain balances for the user's connected Polygon address
-    const realBalances = await fetchRealBalances(userAddress);
-
+    // Initial placeholder while async blockchain query executes
     const account: WalletAccount = {
       address: userAddress,
       chainId: Number(chainId),
       walletType: 'walletconnect',
       walletName: 'WalletConnect',
-      balanceMatic: realBalances.balanceMatic,
-      balanceVerse: realBalances.balanceVerse,
+      balanceMatic: 'Loading...',
+      balanceVerse: 'Loading...',
+      balanceMaticRaw: 0n,
+      balanceVerseRaw: 0n,
     };
 
     cachedAccount = account;
+
+    // Listen for account or chain change events from WalletConnect
+    provider.on('accountsChanged', (newAccounts: string[]) => {
+      if (!newAccounts || newAccounts.length === 0) {
+        disconnectWallet();
+        if (typeof window !== 'undefined') window.location.reload();
+      }
+    });
+
+    provider.on('chainChanged', (newChainId: number | string) => {
+      console.log('Chain changed to', newChainId);
+    });
 
     return {
       success: true,

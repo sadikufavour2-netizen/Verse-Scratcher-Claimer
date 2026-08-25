@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { X, CheckCircle2, ExternalLink, RefreshCw, Gift, AlertCircle, ShieldCheck } from 'lucide-react';
+import { X, CheckCircle2, ExternalLink, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
 import { ScratcherTicket, WalletAccount } from '../types';
-import { PolygonBadge, VerseLogo, VerseCoinLogo } from './VerseBrand';
+import { PolygonBadge, VerseCoinLogo } from './VerseBrand';
 import { executeOnChainClaim } from '../services/walletService';
 
 interface ClaimModalProps {
@@ -42,7 +42,18 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
   const tokenIds = ticketsToClaim.map((t) => t.tokenId);
   const ticketIds = ticketsToClaim.map((t) => t.id);
 
+  // Check POL gas availability
+  const hasPolForGas =
+    account.balanceMaticRaw !== undefined ? account.balanceMaticRaw > 0n : parseFloat(account.balanceMatic || '0') > 0.0001;
+
   const handleExecuteClaim = async () => {
+    // Verify POL gas
+    if (!hasPolForGas && account.balanceMatic !== 'Loading...') {
+      setErrorMessage('INSUFFICIENT POL FOR GAS. Please fund your connected Polygon address with POL to pay for the transaction gas fee.');
+      setClaimStatus('error');
+      return;
+    }
+
     setClaimStatus('claiming');
     setErrorMessage('');
 
@@ -173,7 +184,7 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
                 <PolygonBadge size="sm" />
               </div>
 
-              {/* Prize Summary Box with Verse Logo Colors */}
+              {/* Prize Summary Box */}
               <div className="p-4 rounded-2xl bg-gradient-to-br from-[#0E1A33] to-[#16274D] border border-cyan-500/40 space-y-1.5 shadow-lg">
                 <span className="text-[10px] uppercase font-bold text-[#00E5FF] tracking-wider block">
                   Total Claimable Rewards
@@ -186,7 +197,7 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
                 </div>
                 {totalMatic > 0 && (
                   <div className="text-xs font-semibold text-purple-300">
-                    + {totalMatic} POL / MATIC Bonus
+                    + {totalMatic} POL Bonus
                   </div>
                 )}
               </div>
@@ -200,19 +211,21 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Gas Fee (Polygon):</span>
-                  <span className="font-mono text-emerald-400">&lt; 0.005 POL (~$0.003)</span>
+                  <span>Your POL Gas Balance:</span>
+                  <span className={`font-mono font-bold ${!hasPolForGas && account.balanceMatic !== 'Loading...' ? 'text-red-400' : 'text-purple-300'}`}>
+                    {account.balanceMatic || '0.0000'} POL
+                  </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
                   <span>Action:</span>
-                  <span className="font-medium text-slate-300">Wallet Signature Prompt</span>
+                  <span className="font-medium text-slate-300">Polygon Contract Call</span>
                 </div>
               </div>
 
               {errorMessage && (
-                <div className="p-3.5 bg-red-950/50 border border-red-500/40 rounded-2xl text-xs text-red-200 flex items-start gap-2">
-                  <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
-                  <span>{errorMessage}</span>
+                <div className="p-3.5 bg-red-950/60 border border-red-500/50 rounded-2xl text-xs text-red-200 flex items-start gap-2">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5 text-red-400" />
+                  <span className="font-medium leading-relaxed">{errorMessage}</span>
                 </div>
               )}
 

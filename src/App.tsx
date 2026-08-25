@@ -66,15 +66,24 @@ export default function App() {
     }
   };
 
-  // Update account balance dynamically
-  const handleUpdateAccountBalance = (matic: string, verse: string) => {
+  // Update account balance dynamically with real BigInt precision
+  const handleUpdateAccountBalance = (matic: string, verse: string, maticRaw?: bigint, verseRaw?: bigint) => {
     setAccount((prev) => {
       if (!prev) return null;
-      if (prev.balanceMatic === matic && prev.balanceVerse === verse) return prev;
+      if (
+        prev.balanceMatic === matic &&
+        prev.balanceVerse === verse &&
+        prev.balanceMaticRaw === maticRaw &&
+        prev.balanceVerseRaw === verseRaw
+      ) {
+        return prev;
+      }
       return {
         ...prev,
         balanceMatic: matic,
         balanceVerse: verse,
+        balanceMaticRaw: maticRaw ?? prev.balanceMaticRaw,
+        balanceVerseRaw: verseRaw ?? prev.balanceVerseRaw,
       };
     });
   };
