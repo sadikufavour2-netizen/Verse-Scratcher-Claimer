@@ -35,11 +35,24 @@ export const VERSE_SCRATCHER_CONTRACTS = [
 
 /**
  * Official VERSE Token contracts on Polygon Mainnet (ERC-20)
+ * 0xc708D6F2153933DAA50B2D0758955Be0A93A8FEc is the official fxVERSE / Polygon VERSE contract
  */
+export const OFFICIAL_POLYGON_VERSE_CONTRACT = '0xc708D6F2153933DAA50B2D0758955Be0A93A8FEc'.toLowerCase();
+
 export const VERSE_TOKEN_CONTRACTS = [
-  '0xc3983a99540b6e92750e32d80dcfd577884ff357'.toLowerCase(), // Official VERSE on Polygon PoS
+  '0xc708D6F2153933DAA50B2D0758955Be0A93A8FEc'.toLowerCase(), // Official Polygon VERSE / fxVERSE
+  '0xc3983a99540b6e92750e32d80dcfd577884ff357'.toLowerCase(), // Variant VERSE PoS
   '0x6985884c4392d348587b19cb9eaaf157f13271cd'.toLowerCase(), // Bridged VERSE
-  '0xc797f147986064d3b01e52b34c6e4a0c731afa54'.toLowerCase(), // Variant VERSE
+];
+
+export const ETHEREUM_VERSE_CONTRACT = '0x249cA2384764D110461418acdAC9078B8e734f55'.toLowerCase();
+
+export const ETHEREUM_RPC_ENDPOINTS = [
+  'https://cloudflare-eth.com',
+  'https://rpc.ankr.com/eth',
+  'https://eth.llamarpc.com',
+  'https://ethereum.publicnode.com',
+  'https://1rpc.io/eth',
 ];
 
 /**
@@ -153,6 +166,46 @@ export async function callPolygonRpc(method: string, params: any[]): Promise<any
   throw lastError || new Error(`Failed to execute ${method} on Polygon RPCs`);
 }
 
+/**
+ * Helper to execute RPC JSON-RPC calls on Ethereum Mainnet
+ */
+export async function callEthereumRpc(method: string, params: any[]): Promise<any> {
+  let lastError: any = null;
+
+  for (const endpoint of ETHEREUM_RPC_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Math.floor(Math.random() * 100000),
+          method,
+          params,
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data.error) {
+        lastError = data.error;
+        continue;
+      }
+      return data.result;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw lastError || new Error(`Failed to execute ${method} on Ethereum RPCs`);
+}
+
 export interface RealBalancesResult {
   balanceMatic: string;
   balanceVerse: string;
@@ -160,21 +213,24 @@ export interface RealBalancesResult {
   balanceVerseRaw: bigint;
   balanceMaticError?: string | null;
   balanceVerseError?: string | null;
+  balanceVerseEthereum?: string | null;
+  balanceVerseNetworkNote?: string | null;
 }
 
 /**
  * Real Polygon On-Chain Balance Query:
  * Queries real native POL/MATIC balance via eth_getBalance
  * Queries real VERSE ERC-20 token balance via eth_call balanceOf(address)
- * using the official Polygon VERSE contract (0xc3983a99540b6e92750e32d80dcfd577884ff357) and its decimals()
+ * using the official Polygon VERSE/fxVERSE contract (0xc708D6F2153933DAA50B2D0758955Be0A93A8FEc) and its decimals()
  */
 export async function fetchRealBalances(address: string): Promise<RealBalancesResult> {
   if (!address || !address.startsWith('0x') || address.length !== 42) {
     return {
       balanceMatic: '0.0000',
-      balanceVerse: '0',
+      balanceVerse: 'Unable to load VERSE balance',
       balanceMaticRaw: 0n,
       balanceVerseRaw: 0n,
+      balanceVerseError: 'Invalid EVM address format',
     };
   }
 
@@ -186,7 +242,7 @@ export async function fetchRealBalances(address: string): Promise<RealBalancesRe
   let maticError: string | null = null;
   let formattedMatic = '0.0000';
 
-  // 1. Fetch Real Native POL / MATIC Gas Balance
+  // 1. Fetch Real Native POL / MATIC Gas Balance on Polygon
   try {
     const rawMaticHex = await callPolygonRpc('eth_getBalance', [normalizedAddr, 'latest']);
     if (rawMaticHex && rawMaticHex !== '0x') {
@@ -203,31 +259,34 @@ export async function fetchRealBalances(address: string): Promise<RealBalancesRe
     maticError = err?.message || 'Failed to query POL balance on Polygon';
   }
 
-  // 2. Fetch Real VERSE ERC-20 Token Balance using the official Polygon VERSE contract and its decimals()
-  const primaryVerseContract = '0xc3983a99540b6e92750e32d80dcfd577884ff357';
+  // 2. Fetch Real VERSE ERC-20 Token Balance using the official Polygon VERSE contract:
+  // 0xc708D6F2153933DAA50B2D0758955Be0A93A8FEc (fxVERSE on Polygon)
+  const primaryVerseContract = OFFICIAL_POLYGON_VERSE_CONTRACT;
   let verseRaw: bigint = 0n;
   let verseDecimals = 18;
-  let verseSuccess = false;
+  let decimalsSuccess = false;
+  let balanceOfSuccess = false;
   let verseError: string | null = null;
 
-  // Query decimals() from the official Polygon VERSE contract
+  // Query decimals() from the official Polygon VERSE contract (0x313ce567)
   try {
     const decimalsHex = await callPolygonRpc('eth_call', [
-      { to: primaryVerseContract, data: '0x313ce567' }, // decimals()
+      { to: primaryVerseContract, data: '0x313ce567' },
       'latest',
     ]);
     if (decimalsHex && decimalsHex !== '0x' && decimalsHex !== '0x0') {
       const parsedDec = parseInt(decimalsHex, 16);
       if (!isNaN(parsedDec) && parsedDec > 0 && parsedDec <= 36) {
         verseDecimals = parsedDec;
+        decimalsSuccess = true;
       }
     }
-  } catch (dErr) {
-    console.warn('decimals() RPC query fallback to 18:', dErr);
-    verseDecimals = 18;
+  } catch (dErr: any) {
+    console.warn('decimals() query error on primary VERSE contract:', dErr);
+    // Continue to attempt with fallback decimals = 18
   }
 
-  // Query balanceOf(userAddress) on the official VERSE contract
+  // Query balanceOf(connectedAddress) on 0xc708D6F2153933DAA50B2D0758955Be0A93A8FEc
   try {
     const rawVerseHex = await callPolygonRpc('eth_call', [
       { to: primaryVerseContract, data: balanceOfData },
@@ -236,15 +295,17 @@ export async function fetchRealBalances(address: string): Promise<RealBalancesRe
 
     if (rawVerseHex && rawVerseHex !== '0x') {
       verseRaw = BigInt(rawVerseHex);
-      verseSuccess = true;
+      balanceOfSuccess = true;
     } else {
-      throw new Error('Empty response from official VERSE token contract');
+      throw new Error('Empty response from official Polygon VERSE contract');
     }
   } catch (vErr: any) {
-    console.warn('Primary VERSE balanceOf query failed, attempting fallbacks:', vErr);
+    console.warn('Official Polygon VERSE balanceOf query failed:', vErr);
+    verseError = vErr?.message || 'Failed to query official Polygon VERSE contract';
+  }
 
-    // Try secondary registered VERSE contracts on Polygon
-    let fallbackSuccess = false;
+  // If primary contract returned 0 or failed, try secondary registered Polygon VERSE contracts
+  if (!balanceOfSuccess || verseRaw === 0n) {
     for (const altContract of VERSE_TOKEN_CONTRACTS.slice(1)) {
       try {
         const altHex = await callPolygonRpc('eth_call', [
@@ -252,22 +313,46 @@ export async function fetchRealBalances(address: string): Promise<RealBalancesRe
           'latest',
         ]);
         if (altHex && altHex !== '0x') {
-          verseRaw = BigInt(altHex);
-          verseSuccess = true;
-          fallbackSuccess = true;
-          break;
+          const altRaw = BigInt(altHex);
+          if (altRaw > verseRaw) {
+            verseRaw = altRaw;
+            balanceOfSuccess = true;
+            verseError = null;
+          }
         }
       } catch (e) {}
     }
+  }
 
-    if (!fallbackSuccess) {
-      verseError = vErr?.message || 'Failed to query VERSE token contract on Polygon';
+  // Check if wallet holds VERSE on Ethereum Mainnet if Polygon VERSE is 0
+  let ethVerseFormatted: string | null = null;
+  let ethVerseNetworkNote: string | null = null;
+
+  if (balanceOfSuccess && verseRaw === 0n) {
+    try {
+      const ethRawHex = await callEthereumRpc('eth_call', [
+        { to: ETHEREUM_VERSE_CONTRACT, data: balanceOfData },
+        'latest',
+      ]);
+      if (ethRawHex && ethRawHex !== '0x' && ethRawHex !== '0x0') {
+        const ethRaw = BigInt(ethRawHex);
+        if (ethRaw > 0n) {
+          ethVerseFormatted = formatBigIntBalance(ethRaw, 18, 2);
+          ethVerseNetworkNote = `Detected ${ethVerseFormatted} VERSE on Ethereum Mainnet. Verse Scratchers run on Polygon — bridge your VERSE to Polygon (fxVERSE) to use.`;
+        }
+      }
+    } catch (ethErr) {
+      console.warn('Ethereum VERSE check error:', ethErr);
     }
   }
 
-  const formattedVerse = verseSuccess
-    ? formatBigIntBalance(verseRaw, verseDecimals, 2)
-    : 'Error';
+  // Strict verification: if balanceOf or RPC failed, DO NOT display 0, display 'Unable to load VERSE balance'
+  let formattedVerse = 'Unable to load VERSE balance';
+  if (balanceOfSuccess) {
+    formattedVerse = formatBigIntBalance(verseRaw, verseDecimals, 2);
+  } else {
+    verseError = verseError || 'Unable to load VERSE balance from Polygon RPC';
+  }
 
   return {
     balanceMatic: maticError ? 'Error' : formattedMatic,
@@ -276,6 +361,8 @@ export async function fetchRealBalances(address: string): Promise<RealBalancesRe
     balanceVerseRaw: verseRaw,
     balanceMaticError: maticError,
     balanceVerseError: verseError,
+    balanceVerseEthereum: ethVerseFormatted,
+    balanceVerseNetworkNote: ethVerseNetworkNote,
   };
 }
 

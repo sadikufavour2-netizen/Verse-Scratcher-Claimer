@@ -39,7 +39,9 @@ interface ScratcherDashboardProps {
     maticRaw?: bigint,
     verseRaw?: bigint,
     maticError?: string | null,
-    verseError?: string | null
+    verseError?: string | null,
+    verseEthereum?: string | null,
+    verseNetworkNote?: string | null
   ) => void;
   onNotify?: (title: string, message: string, verseAmount?: number, txHash?: string) => void;
 }
@@ -91,7 +93,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
           balances.balanceMaticRaw,
           balances.balanceVerseRaw,
           balances.balanceMaticError,
-          balances.balanceVerseError
+          balances.balanceVerseError,
+          balances.balanceVerseEthereum,
+          balances.balanceVerseNetworkNote
         );
       }
 
@@ -123,7 +127,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   b.balanceMaticRaw,
                   b.balanceVerseRaw,
                   b.balanceMaticError,
-                  b.balanceVerseError
+                  b.balanceVerseError,
+                  b.balanceVerseEthereum,
+                  b.balanceVerseNetworkNote
                 );
               }
             })
@@ -318,7 +324,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                     WRONG NETWORK DETECTED
                   </div>
                   <p className="text-xs text-amber-200">
-                    Please switch your connected wallet to Polygon Mainnet (Chain ID: 137).
+                    Please switch your connected wallet to Polygon Mainnet.
                   </p>
                   <button
                     id="hero-switch-network-btn"
@@ -366,7 +372,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   </button>
                   <div className="flex items-center gap-2 text-xs text-slate-400">
                     <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse" />
-                    <span>Polygon Mainnet (Chain ID 137)</span>
+                    <span>Polygon Mainnet</span>
                   </div>
                 </div>
               )}
@@ -416,7 +422,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </p>
             </div>
 
-            <div className="p-6 rounded-3xl bg-[#080C1A] border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
+            <div className="p-6 rounded-3xl bg-[#080C1A] border border-slate-800 space-y-2.5">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
                 3
               </div>
@@ -483,6 +489,17 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
             </div>
           </div>
 
+          {/* Multi-network VERSE detection notice if user holds VERSE on Ethereum */}
+          {account.balanceVerseNetworkNote && (
+            <div className="p-4 bg-purple-950/40 border border-purple-500/40 rounded-2xl flex items-center gap-3">
+              <Info size={18} className="text-purple-300 shrink-0" />
+              <div className="text-xs text-purple-200">
+                <span className="font-bold text-white">Network Notice: </span>
+                {account.balanceVerseNetworkNote}
+              </div>
+            </div>
+          )}
+
           {/* Real On-Chain Wallet Balance Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Real VERSE Token Balance */}
@@ -492,7 +509,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                   <VerseCoinLogo size={16} />
                   VERSE BALANCE
                 </span>
-                {account.balanceVerseError || account.balanceVerse === 'Error' ? (
+                {account.balanceVerseError || account.balanceVerse === 'Error' || account.balanceVerse === 'Unable to load VERSE balance' ? (
                   <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
                 ) : (
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -501,11 +518,11 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="text-2xl font-black text-white flex items-baseline gap-1.5 pt-1">
                 {account.balanceVerse === 'Loading...' ? (
                   <span className="text-slate-400 text-lg animate-pulse">Loading...</span>
-                ) : account.balanceVerseError || account.balanceVerse === 'Error' ? (
+                ) : account.balanceVerseError || account.balanceVerse === 'Error' || account.balanceVerse === 'Unable to load VERSE balance' ? (
                   <div className="flex flex-col items-start gap-1">
-                    <span className="text-red-400 text-sm font-black flex items-center gap-1">
-                      <AlertTriangle size={14} className="text-red-400" />
-                      RPC Error
+                    <span className="text-red-400 text-xs font-bold flex items-center gap-1">
+                      <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                      Unable to load VERSE balance
                     </span>
                     <button
                       onClick={handleRefreshAll}
@@ -705,7 +722,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <RefreshCw size={36} className="mx-auto text-[#00E5FF] animate-spin" />
               <h4 className="text-lg font-black text-white">SCANNING POLYGON...</h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Finding your Verse Scratcher NFTs on Polygon Mainnet (Chain ID 137)...
+                Finding your Verse Scratcher NFTs on Polygon Mainnet...
               </p>
             </div>
           ) : filteredTickets.length > 0 ? (
