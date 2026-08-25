@@ -83,7 +83,7 @@ export default function App() {
 
   return (
     <WalletErrorBoundary>
-      <div className="min-h-screen bg-[#070A13] text-slate-100 flex flex-col selection:bg-[#00E5FF]/30 selection:text-[#00E5FF] font-sans antialiased">
+      <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col selection:bg-[#00E5FF]/30 selection:text-[#00E5FF] font-sans antialiased">
         {/* Navigation Bar */}
         <Navbar
           status={connectionStatus}
@@ -115,19 +115,12 @@ export default function App() {
           onError={handleConnectError}
         />
 
-        {/* Footer */}
-        <footer className="border-t border-slate-800/80 bg-[#060810] py-6 px-4 text-center text-xs text-slate-400">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-300">Verse by Bitcoin.com</span>
-              <span>&bull;</span>
-              <span className="font-mono text-purple-400">Polygon Network (137)</span>
-            </div>
-            <div className="flex items-center gap-4 text-slate-400">
-              <span className="hover:text-slate-300">Verse Scratcher NFTs</span>
-              <span>&bull;</span>
-              <span className="hover:text-slate-300">Safe Lazy Loaded Web3</span>
-            </div>
+        {/* Footer with strictly "Verse by Bitcoin.com" */}
+        <footer className="border-t border-slate-800/80 bg-[#04060C] py-6 px-4 text-center">
+          <div className="max-w-7xl mx-auto flex items-center justify-center">
+            <span className="font-bold text-slate-300 text-sm tracking-wide">
+              Verse by Bitcoin.com
+            </span>
           </div>
         </footer>
       </div>

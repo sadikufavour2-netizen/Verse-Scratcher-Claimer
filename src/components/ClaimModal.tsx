@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import confetti from 'canvas-confetti';
-import { X, CheckCircle2, ExternalLink, RefreshCw, Sparkles, Gift } from 'lucide-react';
+import { X, CheckCircle2, ExternalLink, RefreshCw, Gift, AlertCircle, ShieldCheck } from 'lucide-react';
 import { ScratcherTicket, WalletAccount } from '../types';
-import { PolygonBadge, VerseLogo } from './VerseBrand';
+import { PolygonBadge, VerseLogo, VerseCoinLogo } from './VerseBrand';
+import { executeOnChainClaim } from '../services/walletService';
 
 interface ClaimModalProps {
   ticket: ScratcherTicket | null;
@@ -38,34 +39,32 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
 
   const totalVerse = ticketsToClaim.reduce((sum, t) => sum + t.totalVerseValue, 0);
   const totalMatic = ticketsToClaim.reduce((sum, t) => sum + t.totalMaticValue, 0);
+  const tokenIds = ticketsToClaim.map((t) => t.tokenId);
+  const ticketIds = ticketsToClaim.map((t) => t.id);
 
   const handleExecuteClaim = async () => {
     setClaimStatus('claiming');
     setErrorMessage('');
 
     try {
-      // Simulate real-time Polygon smart contract claim transaction
-      await new Promise((resolve) => setTimeout(resolve, 1600));
+      // Prompt real Web3 transaction signature on connected wallet
+      const result = await executeOnChainClaim(account, ticketIds, tokenIds, totalVerse);
 
-      // Generate realistic Polygon tx hash
-      const randomBytes = Array.from({ length: 32 }, () =>
-        Math.floor(Math.random() * 256).toString(16).padStart(2, '0')
-      ).join('');
-      const generatedTx = `0x${randomBytes}`;
-      setTxHash(generatedTx);
-      setClaimStatus('success');
+      if (result.success && result.txHash) {
+        setTxHash(result.txHash);
+        setClaimStatus('success');
 
-      try {
-        confetti({
-          particleCount: 100,
-          spread: 70,
-          origin: { y: 0.6 },
-          colors: ['#00E5FF', '#8247E5', '#00FF88', '#FFD700'],
-        });
-      } catch (e) {}
+        try {
+          confetti({
+            particleCount: 90,
+            spread: 70,
+            origin: { y: 0.6 },
+            colors: ['#00E5FF', '#3B82F6', '#9333EA', '#FF00A0', '#00FF88'],
+          });
+        } catch (e) {}
 
-      const ids = ticketsToClaim.map((t) => t.id);
-      onClaimSuccess(ids, generatedTx);
+        onClaimSuccess(ticketIds, result.txHash);
+      }
     } catch (err: any) {
       console.error('Claim transaction failed:', err);
       setClaimStatus('error');
@@ -81,24 +80,31 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           onClick={claimStatus === 'claiming' ? undefined : onClose}
-          className="fixed inset-0 bg-black/80 backdrop-blur-sm"
+          className="fixed inset-0 bg-black/85 backdrop-blur-md"
         />
 
         <motion.div
-          initial={{ scale: 0.95, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          exit={{ scale: 0.95, opacity: 0 }}
-          className="relative w-full max-w-md bg-[#0A0F1D] border border-cyan-500/40 rounded-2xl p-6 shadow-2xl z-10 overflow-hidden"
+          initial={{ scale: 0.95, opacity: 0, y: 10 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          exit={{ scale: 0.95, opacity: 0, y: 10 }}
+          className="relative w-full max-w-md bg-[#080C1A] border border-cyan-500/40 rounded-3xl p-6 sm:p-8 shadow-[0_0_50px_rgba(0,229,255,0.2)] z-10 overflow-hidden"
         >
+          {/* Top Metallic Rainbow Gradient Stripe */}
+          <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-[#00E5FF] via-[#3B82F6] via-[#9333EA] to-[#FF00A0]" />
+
           {/* Header */}
           <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <VerseLogo size={28} />
+            <div className="flex items-center gap-2.5">
+              <VerseCoinLogo size={32} glow={true} />
+              <div>
+                <span className="text-sm font-black text-white tracking-wider block">CLAIM VERSE REWARDS</span>
+                <span className="text-[11px] text-slate-400">Polygon Network</span>
+              </div>
             </div>
             {claimStatus !== 'claiming' && (
               <button
                 onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -107,17 +113,20 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
 
           {claimStatus === 'success' ? (
             <div className="text-center py-4 space-y-4">
-              <div className="w-16 h-16 mx-auto rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
                 <CheckCircle2 size={36} />
               </div>
-              <h3 className="text-xl font-bold text-white">Prize Claimed Successfully!</h3>
-              <p className="text-sm text-slate-300">
-                Tokens have been transferred to your connected Polygon address:
+              <h3 className="text-xl font-extrabold text-white">Prize Claimed Successfully!</h3>
+              <p className="text-xs text-slate-300">
+                Transaction confirmed. Tokens transferred to your Polygon address:
               </p>
-              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 text-left space-y-1.5">
+
+              <div className="p-4 bg-[#0D1426] rounded-2xl border border-slate-800 text-left space-y-2">
                 <div className="flex justify-between text-xs text-slate-400">
-                  <span>Recipient:</span>
-                  <span className="font-mono text-slate-200">{account.address.slice(0, 10)}...{account.address.slice(-6)}</span>
+                  <span>Recipient Address:</span>
+                  <span className="font-mono text-white font-semibold">
+                    {account.address.slice(0, 8)}...{account.address.slice(-6)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-xs text-slate-400">
                   <span>VERSE Awarded:</span>
@@ -125,30 +134,30 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
                 </div>
                 {totalMatic > 0 && (
                   <div className="flex justify-between text-xs text-slate-400">
-                    <span>POLYGON (POL):</span>
-                    <span className="font-bold text-purple-300">+{totalMatic} MATIC</span>
+                    <span>POL Bonus:</span>
+                    <span className="font-bold text-purple-300">+{totalMatic} POL</span>
                   </div>
                 )}
-                <div className="flex justify-between text-xs text-slate-400 pt-1 border-t border-slate-800">
+                <div className="flex justify-between text-xs text-slate-400 pt-1.5 border-t border-slate-800">
                   <span>Network:</span>
-                  <span className="font-mono text-purple-300">Polygon Mainnet (137)</span>
+                  <span className="font-semibold text-purple-300">Polygon Mainnet</span>
                 </div>
               </div>
 
-              <div className="pt-2 flex flex-col gap-2">
+              <div className="pt-2 flex flex-col gap-2.5">
                 <a
                   href={`https://polygonscan.com/tx/${txHash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-1.5 text-xs text-[#00E5FF] hover:underline font-semibold"
+                  className="flex items-center justify-center gap-1.5 text-xs text-[#00E5FF] hover:underline font-bold"
                 >
-                  View on PolygonScan <ExternalLink size={12} />
+                  View Transaction on PolygonScan <ExternalLink size={13} />
                 </a>
                 <button
                   onClick={onClose}
-                  className="w-full py-3 bg-[#00E5FF] hover:bg-[#00cce6] text-black font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                  className="w-full py-3.5 bg-[#00E5FF] hover:bg-[#00cce6] text-black font-extrabold text-xs rounded-xl transition-all shadow-lg active:scale-95 cursor-pointer"
                 >
-                  Done
+                  DONE
                 </button>
               </div>
             </div>
@@ -156,71 +165,78 @@ export const ClaimModal: React.FC<ClaimModalProps> = ({
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-lg font-bold text-white">
-                    {isBatch ? `Claim All (${ticketsToClaim.length} Tickets)` : 'Claim Scratcher Reward'}
+                  <h3 className="text-base font-extrabold text-white">
+                    {isBatch ? `Claim All (${ticketsToClaim.length} NFTs)` : `Claim Reward (#${ticketsToClaim[0]?.tokenId})`}
                   </h3>
-                  <p className="text-xs text-slate-400">Polygon Smart Contract Settlement</p>
+                  <p className="text-xs text-slate-400">Sign transaction with connected wallet</p>
                 </div>
                 <PolygonBadge size="sm" />
               </div>
 
-              {/* Prize Summary Box */}
-              <div className="p-4 rounded-xl bg-gradient-to-br from-[#0D162B] to-[#122244] border border-[#00E5FF]/30 space-y-2">
-                <span className="text-[11px] uppercase font-bold text-[#00E5FF] tracking-wider block">
-                  Reward to Deposit
+              {/* Prize Summary Box with Verse Logo Colors */}
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-[#0E1A33] to-[#16274D] border border-cyan-500/40 space-y-1.5 shadow-lg">
+                <span className="text-[10px] uppercase font-bold text-[#00E5FF] tracking-wider block">
+                  Total Claimable Rewards
                 </span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-3xl font-extrabold text-white">
+                  <span className="text-3xl font-black text-white tracking-tight">
                     {totalVerse.toLocaleString()}
                   </span>
-                  <span className="text-sm font-bold text-[#00E5FF]">VERSE</span>
+                  <span className="text-sm font-extrabold text-[#00E5FF]">VERSE</span>
                 </div>
                 {totalMatic > 0 && (
                   <div className="text-xs font-semibold text-purple-300">
-                    + {totalMatic} MATIC / POL Bonus
+                    + {totalMatic} POL / MATIC Bonus
                   </div>
                 )}
               </div>
 
-              {/* Contract specs */}
-              <div className="p-3 bg-slate-900/60 rounded-xl border border-slate-800 text-xs space-y-1.5">
+              {/* Gas & Address Information */}
+              <div className="p-3.5 bg-[#0D1426] rounded-2xl border border-slate-800 text-xs space-y-1.5">
                 <div className="flex justify-between text-slate-400">
                   <span>Connected Wallet:</span>
-                  <span className="font-mono text-slate-200">{account.address.slice(0, 8)}...{account.address.slice(-6)}</span>
+                  <span className="font-mono text-slate-200">
+                    {account.address.slice(0, 8)}...{account.address.slice(-6)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Polygon Gas Fee:</span>
-                  <span className="font-mono text-emerald-400">&lt; 0.005 MATIC (~$0.003)</span>
+                  <span>Gas Fee (Polygon):</span>
+                  <span className="font-mono text-emerald-400">&lt; 0.005 POL (~$0.003)</span>
                 </div>
                 <div className="flex justify-between text-slate-400">
-                  <span>Contract:</span>
-                  <span className="font-mono text-slate-400">0xVerseScratcher...Claimer</span>
+                  <span>Action:</span>
+                  <span className="font-medium text-slate-300">Wallet Signature Prompt</span>
                 </div>
               </div>
 
               {errorMessage && (
-                <div className="p-3 bg-red-950/40 border border-red-500/30 rounded-xl text-xs text-red-300">
-                  {errorMessage}
+                <div className="p-3.5 bg-red-950/50 border border-red-500/40 rounded-2xl text-xs text-red-200 flex items-start gap-2">
+                  <AlertCircle size={15} className="shrink-0 mt-0.5 text-red-400" />
+                  <span>{errorMessage}</span>
                 </div>
               )}
 
               <button
                 disabled={claimStatus === 'claiming' || ticketsToClaim.length === 0}
                 onClick={handleExecuteClaim}
-                className="w-full py-3.5 bg-gradient-to-r from-[#00E5FF] to-[#00FF88] hover:from-[#00cce6] hover:to-[#00e67a] disabled:opacity-50 text-black font-extrabold rounded-xl shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                className="w-full py-4 bg-gradient-to-r from-[#00E5FF] via-[#3B82F6] to-[#9333EA] hover:from-[#00cce6] hover:to-[#7e22ce] disabled:opacity-50 text-white font-extrabold text-sm rounded-2xl shadow-xl shadow-cyan-500/25 flex items-center justify-center gap-2.5 transition-all active:scale-95 cursor-pointer"
               >
                 {claimStatus === 'claiming' ? (
                   <>
                     <RefreshCw size={18} className="animate-spin" />
-                    <span>CONFIRMING ON POLYGON...</span>
+                    <span>PLEASE SIGN IN YOUR WALLET...</span>
                   </>
                 ) : (
                   <>
-                    <Gift size={18} />
-                    <span>CLAIM {totalVerse.toLocaleString()} VERSE</span>
+                    <ShieldCheck size={18} />
+                    <span>SIGN &amp; CLAIM {totalVerse.toLocaleString()} VERSE</span>
                   </>
                 )}
               </button>
+
+              <p className="text-[11px] text-center text-slate-400">
+                You will sign this claim transaction in your connected wallet on Polygon.
+              </p>
             </div>
           )}
         </motion.div>

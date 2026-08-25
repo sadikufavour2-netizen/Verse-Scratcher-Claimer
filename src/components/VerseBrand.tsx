@@ -12,7 +12,7 @@ export const VerseCoinLogo: React.FC<{
   return (
     <div
       className={`relative inline-flex items-center justify-center shrink-0 ${
-        glow ? 'drop-shadow-[0_0_16px_rgba(0,229,255,0.45)]' : 'drop-shadow-md'
+        glow ? 'drop-shadow-[0_0_18px_rgba(0,229,255,0.5)]' : 'drop-shadow-md'
       } ${className}`}
       style={{ width: size, height: size }}
     >
@@ -43,7 +43,7 @@ export const VerseCoinLogo: React.FC<{
 
           {/* Top-Left Highlight Shine */}
           <radialGradient id="verseShine" cx="150" cy="130" r="180" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.4" />
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.45" />
             <stop offset="60%" stopColor="#00E5FF" stopOpacity="0.1" />
             <stop offset="100%" stopColor="#00E5FF" stopOpacity="0" />
           </radialGradient>
@@ -86,8 +86,7 @@ export const VerseCoinLogo: React.FC<{
         <circle cx="250" cy="250" r="215" fill="url(#verseShine)" />
         <circle cx="250" cy="250" r="212" fill="none" stroke="#000000" strokeWidth="3" strokeOpacity="0.2" />
 
-        {/* RIGHT PILL (Tucked slightly in background, angled ~ -32 deg) */}
-        {/* Center roughly (310, 245), length ~ 250, radius ~ 48 */}
+        {/* RIGHT PILL */}
         <g filter="url(#pillShadow)">
           <path
             d="M 292 135
@@ -101,8 +100,7 @@ export const VerseCoinLogo: React.FC<{
           />
         </g>
 
-        {/* LEFT PILL (Foreground, angled ~ +32 deg) */}
-        {/* Extending from top-left (175, 135) to bottom-center (275, 385) */}
+        {/* LEFT PILL */}
         <g filter="url(#topPillShadow)">
           <path
             d="M 205 135
@@ -154,6 +152,9 @@ export const VerseLogo: React.FC<{
   );
 };
 
+/**
+ * Clean Polygon Badge without "137" writeup
+ */
 export const PolygonBadge: React.FC<{ className?: string; size?: 'sm' | 'md' }> = ({
   className = '',
   size = 'md',
@@ -175,20 +176,6 @@ export const PolygonBadge: React.FC<{ className?: string; size?: 'sm' | 'md' }> 
         />
       </svg>
       <span className="font-bold tracking-tight text-purple-200">Polygon</span>
-      <span className="text-[10px] bg-purple-500/30 text-purple-300 px-1.5 py-0.2 rounded font-mono font-bold">
-        137
-      </span>
-    </div>
-  );
-};
-
-export const BitcoinComBadge: React.FC<{ className?: string }> = ({ className = '' }) => {
-  return (
-    <div
-      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full border border-cyan-500/40 bg-[#0A1830] text-cyan-300 text-xs shadow-[0_0_10px_rgba(0,229,255,0.15)] ${className}`}
-    >
-      <span className="w-2 h-2 rounded-full bg-[#00E5FF] animate-pulse"></span>
-      <span className="font-semibold">Bitcoin.com Wallet Ready</span>
     </div>
   );
 };

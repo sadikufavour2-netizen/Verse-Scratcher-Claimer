@@ -38,13 +38,13 @@ export const Navbar: React.FC<NavbarProps> = ({
           <PolygonBadge />
         </div>
 
-        {/* Right Section - Clean header (Connect button removed from top when disconnected) */}
+        {/* Right Section */}
         <div className="flex items-center gap-3">
-          {/* STATE: DISCONNECTED -> Top button removed as requested */}
+          {/* STATE: DISCONNECTED */}
           {status === 'DISCONNECTED' && (
             <div className="flex items-center gap-2">
-              <span className="hidden sm:inline-flex text-xs font-semibold text-slate-400 bg-slate-900/60 px-3 py-1.5 rounded-full border border-slate-800">
-                Polygon Mainnet &bull; Chain 137
+              <span className="hidden sm:inline-flex text-xs font-bold text-slate-400 bg-[#080C1A] px-3.5 py-1.5 rounded-full border border-slate-800">
+                Polygon Mainnet
               </span>
             </div>
           )}
@@ -53,7 +53,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           {status === 'CONNECTING' && (
             <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[#0D1426] border border-[#00E5FF]/30 text-[#00E5FF] text-xs font-bold">
               <RefreshCw size={14} className="animate-spin" />
-              <span>CONNECTING WALLET...</span>
+              <span>CONNECTING...</span>
             </div>
           )}
 
@@ -116,7 +116,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     className="fixed inset-0 z-40"
                     onClick={() => setDropdownOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-72 bg-[#0A0F1D] border border-cyan-500/30 rounded-2xl shadow-2xl p-4 z-50 space-y-3.5">
+                  <div className="absolute right-0 mt-2 w-72 bg-[#080C1A] border border-cyan-500/40 rounded-2xl shadow-2xl p-4 z-50 space-y-3.5">
                     <div className="pb-2.5 border-b border-slate-800">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
@@ -136,12 +136,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                         <span className="font-bold text-[#00E5FF]">{account.balanceVerse || '0'} VERSE</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
-                        <span>MATIC / POL Balance:</span>
+                        <span>MATIC / POL:</span>
                         <span className="font-bold text-purple-300">{account.balanceMatic || '0'} POL</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
                         <span>Polygon Network:</span>
-                        <span className="font-semibold text-emerald-400">Chain 137 (Connected)</span>
+                        <span className="font-semibold text-emerald-400">Polygon Mainnet</span>
                       </div>
                     </div>
 
@@ -151,7 +151,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setDropdownOpen(false);
                           onSwitchAccountClick();
                         }}
-                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[#00E5FF] hover:bg-[#00E5FF]/10 rounded-xl transition-colors text-left"
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-bold text-[#00E5FF] hover:bg-[#00E5FF]/10 rounded-xl transition-colors text-left cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
                           <PlusCircle size={14} />
@@ -175,7 +175,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                           setDropdownOpen(false);
                           onDisconnectClick();
                         }}
-                        className="w-full flex items-center justify-between px-3 py-2 text-xs text-red-400 hover:bg-red-950/40 rounded-xl font-bold transition-colors"
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs text-red-400 hover:bg-red-950/40 rounded-xl font-bold transition-colors cursor-pointer"
                       >
                         <span>Disconnect Address</span>
                         <LogOut size={13} />
