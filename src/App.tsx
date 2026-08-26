@@ -197,8 +197,6 @@ export default function App() {
         <main className="flex-1">
           {currentView === 'admin' ? (
             <AdminPanel
-              account={account}
-              onConnectWallet={handleOpenConnect}
               onSwitchToUserPortal={() => setCurrentView('home')}
               onNotify={handleNotify}
             />

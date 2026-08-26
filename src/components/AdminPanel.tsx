@@ -13,12 +13,13 @@ import {
   AlertCircle,
   Database,
   ArrowRight,
-  PackagePlus,
   Flame,
   Crown,
   Wallet,
   Check,
   ExternalLink,
+  LogOut,
+  X,
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
@@ -34,23 +35,26 @@ import {
 } from '../services/apiService';
 import {
   fetchRealScratchersForAddress,
+  fetchRealBalances,
   formatBalanceDisplay,
+  connectViaWalletConnect,
 } from '../services/walletService';
 import { VerseCoinLogo, PolygonBadge } from './VerseBrand';
 
 interface AdminPanelProps {
-  account: WalletAccount | null;
-  onConnectWallet: () => void;
   onSwitchToUserPortal: () => void;
   onNotify?: (title: string, message: string, verseAmount?: number) => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
-  account,
-  onConnectWallet,
   onSwitchToUserPortal,
   onNotify,
 }) => {
+  // Admin's own dedicated connected wallet (Independent of user's wallet)
+  const [adminAccount, setAdminAccount] = useState<WalletAccount | null>(null);
+  const [isConnectingAdminWallet, setIsConnectingAdminWallet] = useState(false);
+  const [adminConnectError, setAdminConnectError] = useState<string | null>(null);
+
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [adminOnChainNfts, setAdminOnChainNfts] = useState<ScratcherTicket[]>([]);
   const [isLoadingNfts, setIsLoadingNfts] = useState(false);
@@ -104,14 +108,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  // Fetch real NFTs for admin address
-  const fetchAdminNfts = async (address: string) => {
+  // Fetch real balances and NFTs for admin address
+  const fetchAdminWalletData = async (address: string) => {
     setIsLoadingNfts(true);
     try {
+      // 1. Fetch real on-chain balances
+      const balances = await fetchRealBalances(address);
+      setAdminAccount((prev) =>
+        prev
+          ? {
+              ...prev,
+              balanceMatic: balances.balanceMatic,
+              balanceVerse: balances.balanceVerse,
+              balanceMaticRaw: balances.balanceMaticRaw,
+              balanceVerseRaw: balances.balanceVerseRaw,
+              balanceMaticError: balances.balanceMaticError,
+              balanceVerseError: balances.balanceVerseError,
+            }
+          : null
+      );
+
+      // 2. Fetch on-chain scratcher NFTs
       const nfts = await fetchRealScratchersForAddress(address);
       setAdminOnChainNfts(nfts);
     } catch (err) {
-      console.warn('Error querying admin on-chain NFTs:', err);
+      console.warn('Error querying admin on-chain data:', err);
     } finally {
       setIsLoadingNfts(false);
     }
@@ -123,13 +144,51 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Sync admin wallet when connected
+  // Poll admin wallet balances and NFTs when admin is connected
   useEffect(() => {
-    if (account?.address) {
-      setAdminWalletApi(account.address).catch(console.error);
-      fetchAdminNfts(account.address);
+    if (adminAccount?.address) {
+      setAdminWalletApi(adminAccount.address).catch(console.error);
+      fetchAdminWalletData(adminAccount.address);
+      const interval = setInterval(() => {
+        if (adminAccount?.address) fetchAdminWalletData(adminAccount.address);
+      }, 10000);
+      return () => clearInterval(interval);
     }
-  }, [account?.address]);
+  }, [adminAccount?.address]);
+
+  // Connect Admin Wallet Handler
+  const handleConnectAdminWallet = async () => {
+    setIsConnectingAdminWallet(true);
+    setAdminConnectError(null);
+    try {
+      const res = await connectViaWalletConnect();
+      if (res.success && res.account) {
+        setAdminAccount(res.account);
+        await setAdminWalletApi(res.account.address);
+        fetchAdminWalletData(res.account.address);
+        if (onNotify) {
+          onNotify(
+            'Admin Wallet Connected',
+            `Admin connected with address ${res.account.address.slice(0, 6)}...${res.account.address.slice(-4)}`
+          );
+        }
+      } else {
+        setAdminConnectError(res.error || 'Admin wallet connection was cancelled.');
+      }
+    } catch (err: any) {
+      setAdminConnectError(err.message || 'Failed to connect admin wallet.');
+    } finally {
+      setIsConnectingAdminWallet(false);
+    }
+  };
+
+  const handleDisconnectAdminWallet = () => {
+    setAdminAccount(null);
+    setAdminOnChainNfts([]);
+    if (onNotify) {
+      onNotify('Admin Wallet Disconnected', 'Admin wallet has been disconnected.');
+    }
+  };
 
   // Parse multi-line input: "@handle 5" or "handle, 10" or "@handle: 2"
   const parseBatchInput = (text: string) => {
@@ -165,6 +224,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleBatchAllocate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!adminAccount) {
+      setAllocationErrorMsg('Please connect your admin wallet first to dispatch NFTs.');
+      return;
+    }
     if (parsedItems.length === 0) {
       setAllocationErrorMsg('Please enter at least one valid Telegram handle and count');
       return;
@@ -184,7 +247,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const res = await batchAllocateApi(
         payload,
         selectedTier,
-        account?.address || data?.adminWallet || undefined
+        adminAccount.address
       );
 
       setAllocationSuccessMsg(res.message);
@@ -204,6 +267,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleModalSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedNftForSend) return;
+    if (!adminAccount) {
+      setModalError('Please connect your admin wallet first to dispatch NFTs.');
+      return;
+    }
 
     setModalError(null);
     setModalSuccess(null);
@@ -223,7 +290,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const res = await batchAllocateApi(
           [{ username: cleaned, amount: count, tier: selectedNftForSend.tier }],
           selectedNftForSend.tier,
-          account?.address || data?.adminWallet || undefined
+          adminAccount.address
         );
 
         setModalSuccess(`Successfully sent ${count} ${selectedNftForSend.title} to ${cleaned}!`);
@@ -253,7 +320,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const res = await batchAllocateApi(
           payload,
           selectedNftForSend.tier,
-          account?.address || data?.adminWallet || undefined
+          adminAccount.address
         );
 
         setModalSuccess(res.message);
@@ -382,7 +449,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 font-medium mt-1">
-                Dispatch Verse Scratcher NFTs directly to Telegram usernames. Touch any NFT to send one-by-one or in batch.
+                Connect your admin wallet to view your balances and dispatch Verse Scratcher NFTs directly to Telegram usernames.
               </p>
             </div>
           </div>
@@ -401,7 +468,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <button
               onClick={() => {
                 fetchOverview(true);
-                if (account?.address) fetchAdminNfts(account.address);
+                if (adminAccount?.address) fetchAdminWalletData(adminAccount.address);
               }}
               disabled={isRefreshing}
               className="p-2.5 rounded-2xl bg-[#0E172A] hover:bg-[#14203B] border border-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer"
@@ -414,31 +481,52 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* Admin Wallet & Live On-Chain Balance Bar */}
         <div className="pt-4 border-t border-slate-800/80 grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Admin Wallet Address */}
+          {/* Admin Wallet Address & Connect Button */}
           <div className="p-4 rounded-2xl bg-[#070D1B] border border-slate-800 flex items-center justify-between">
             <div>
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
                 Admin Connected Wallet
               </span>
-              {account?.address ? (
-                <span className="font-mono text-xs font-bold text-[#00E5FF] block mt-0.5">
-                  {account.address.slice(0, 8)}...{account.address.slice(-6)}
-                </span>
+              {adminAccount?.address ? (
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="font-mono text-xs font-bold text-[#00E5FF] block">
+                    {adminAccount.address.slice(0, 8)}...{adminAccount.address.slice(-6)}
+                  </span>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
               ) : (
-                <span className="text-xs text-slate-500 italic block mt-0.5">
-                  No Admin Wallet Connected
+                <span className="text-xs text-amber-300/90 font-medium block mt-0.5">
+                  Not Connected (Admin Required)
                 </span>
               )}
             </div>
 
-            {account?.address ? (
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            {adminAccount?.address ? (
+              <button
+                onClick={handleDisconnectAdminWallet}
+                title="Disconnect Admin Wallet"
+                className="p-2 rounded-xl bg-slate-800/80 hover:bg-red-950/60 hover:text-red-300 text-slate-400 border border-slate-700 hover:border-red-500/40 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+              >
+                <LogOut size={13} />
+                <span className="text-[11px]">Disconnect</span>
+              </button>
             ) : (
               <button
-                onClick={onConnectWallet}
-                className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs cursor-pointer shadow-sm"
+                onClick={handleConnectAdminWallet}
+                disabled={isConnectingAdminWallet}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/20"
               >
-                Connect
+                {isConnectingAdminWallet ? (
+                  <>
+                    <RefreshCw size={13} className="animate-spin" />
+                    <span>Connecting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wallet size={13} />
+                    <span>Connect Wallet</span>
+                  </>
+                )}
               </button>
             )}
           </div>
@@ -451,7 +539,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="font-mono text-base font-black text-[#00E5FF]">
-                  {formatBalanceDisplay(account?.balanceVerse, 2, '0.00')}
+                  {adminAccount ? formatBalanceDisplay(adminAccount.balanceVerse, 2, '0.00') : '—'}
                 </span>
                 <span className="text-[11px] font-bold text-cyan-300">VERSE</span>
               </div>
@@ -467,7 +555,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="font-mono text-base font-black text-purple-300">
-                  {formatBalanceDisplay(account?.balanceMatic, 4, '0.0000')}
+                  {adminAccount ? formatBalanceDisplay(adminAccount.balanceMatic, 4, '0.0000') : '—'}
                 </span>
                 <span className="text-[11px] font-bold text-purple-400">POL</span>
               </div>
@@ -475,7 +563,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <PolygonBadge size="sm" />
           </div>
         </div>
+
+        {adminConnectError && (
+          <div className="p-3 rounded-2xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={15} />
+              <span>{adminConnectError}</span>
+            </div>
+            <button onClick={() => setAdminConnectError(null)} className="text-slate-400 hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Prominent Banner if Admin Wallet Not Connected */}
+      {!adminAccount && (
+        <div className="p-6 sm:p-8 rounded-3xl bg-[#091122] border border-cyan-500/40 shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-[#00E5FF]/15 border border-cyan-500/40 flex items-center justify-center shrink-0">
+              <Wallet className="w-7 h-7 text-[#00E5FF]" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-white tracking-tight">
+                Connect Admin Wallet to View Balances &amp; NFTs
+              </h3>
+              <p className="text-xs text-slate-400 max-w-xl leading-relaxed">
+                Connect your Polygon admin wallet to load your live on-chain VERSE balance, POL balance, and Verse Scratcher NFTs for dispatch.
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleConnectAdminWallet}
+            disabled={isConnectingAdminWallet}
+            className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-cyan-500/25 cursor-pointer"
+          >
+            {isConnectingAdminWallet ? (
+              <>
+                <RefreshCw size={15} className="animate-spin" />
+                <span>Connecting Wallet...</span>
+              </>
+            ) : (
+              <>
+                <Wallet size={16} />
+                <span>Connect Admin Wallet</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Scratcher Inventory Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -495,7 +632,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </button>
           </div>
           <div className="text-3xl font-black text-white tracking-tight">
-            {totalNftsAvailable.toLocaleString()}
+            {adminAccount ? totalNftsAvailable.toLocaleString() : '—'}
           </div>
           <span className="text-[11px] text-slate-400 font-medium">Available to Send</span>
         </div>
@@ -559,7 +696,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           <Sparkles size={14} />
-          Admin NFTs &amp; Dispatch ({totalNftsAvailable.toLocaleString()})
+          Admin NFTs &amp; Dispatch {adminAccount ? `(${totalNftsAvailable.toLocaleString()})` : ''}
         </button>
 
         <button
@@ -624,29 +761,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
 
-          {/* If No NFTs available in address / vault */}
-          {!account?.address ? (
+          {/* Condition: Admin Not Connected */}
+          {!adminAccount ? (
             <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
-              <Wallet size={44} className="mx-auto text-cyan-400 opacity-60" />
-              <h4 className="text-lg font-black text-white">Connect Admin Wallet</h4>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Connect your Polygon admin wallet to load your real on-chain VERSE balance and Verse Scratcher NFTs.
+              <Wallet size={48} className="mx-auto text-cyan-400 opacity-60" />
+              <h4 className="text-xl font-black text-white tracking-tight">Connect Admin Wallet</h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Connect your Polygon admin wallet to display your live on-chain VERSE balance, POL balance, and Verse Scratcher NFTs.
               </p>
               <button
-                onClick={onConnectWallet}
-                className="px-6 py-2.5 rounded-xl bg-[#00E5FF] text-black font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-cyan-500/20"
+                onClick={handleConnectAdminWallet}
+                disabled={isConnectingAdminWallet}
+                className="px-7 py-3 rounded-2xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-cyan-500/20"
               >
-                Connect Wallet
+                {isConnectingAdminWallet ? 'Connecting...' : 'Connect Admin Wallet'}
               </button>
             </div>
           ) : totalNftsAvailable === 0 ? (
+            /* Condition: Admin Connected but 0 NFTs in address */
             <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
-              <AlertCircle size={44} className="mx-auto text-amber-400" />
+              <AlertCircle size={48} className="mx-auto text-amber-400" />
               <h4 className="text-xl font-black text-white uppercase tracking-tight">
-                No NFTs in this wallet address
+                No NFT in this admin address
               </h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Your connected admin address <span className="font-mono text-cyan-300">{account.address.slice(0, 8)}...{account.address.slice(-6)}</span> currently has 0 Verse Scratcher NFTs. Click below to mint or deposit NFTs into your vault.
+                Your connected admin address <span className="font-mono text-cyan-300">{adminAccount.address.slice(0, 8)}...{adminAccount.address.slice(-6)}</span> currently has 0 Verse Scratcher NFTs. Click below to mint or deposit NFTs into your vault.
               </p>
               <button
                 onClick={() => setShowReplenishModal(true)}
@@ -1122,13 +1261,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               ) : (
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
-                    <span>Telegram Handles &amp; Quantities</span>
-                    <span className="text-[11px] text-slate-500">Format: @username count</span>
+                    <span>Batch Recipients</span>
+                    <span className="text-[10px] text-slate-500">Format: @username count</span>
                   </label>
                   <textarea
                     rows={4}
                     required
-                    placeholder={`@user1 5\n@user2 10\n@user3 2`}
+                    placeholder={`@username 5\n@telegram_user 10`}
                     value={modalBatchInput}
                     onChange={(e) => setModalBatchInput(e.target.value)}
                     className="w-full p-3.5 rounded-xl bg-[#040813] border border-slate-800 text-xs text-cyan-200 font-mono focus:border-[#00E5FF] focus:outline-none"
@@ -1138,14 +1277,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
               {modalError && (
                 <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
-                  <AlertCircle size={15} />
+                  <AlertCircle size={14} />
                   <span>{modalError}</span>
                 </div>
               )}
 
               {modalSuccess && (
                 <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
-                  <CheckCircle2 size={15} />
+                  <CheckCircle2 size={14} />
                   <span>{modalSuccess}</span>
                 </div>
               )}
@@ -1153,21 +1292,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-500/20"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-500/20"
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
-                    <span>Sending...</span>
+                    <span>Sending NFT...</span>
                   </>
                 ) : (
                   <>
                     <Send size={15} />
-                    <span>
-                      {sendMode === 'single'
-                        ? `Send ${singleAmount} NFT(s) to ${singleUsername || 'Recipient'}`
-                        : 'Dispatch Batch to Usernames'}
-                    </span>
+                    <span>Send {selectedNftForSend.title}</span>
                   </>
                 )}
               </button>
@@ -1176,81 +1311,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* Replenish Vault Modal */}
+      {/* REPLENISH VAULT MODAL */}
       {showReplenishModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-[#091122] border border-cyan-500/30 space-y-5 shadow-2xl">
+          <div className="w-full max-w-md p-6 rounded-3xl bg-[#091122] border border-cyan-500/40 space-y-5 shadow-2xl">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <PackagePlus className="text-[#00E5FF]" />
-                <h3 className="text-lg font-black text-white">MINT VAULT NFTS</h3>
-              </div>
+              <h3 className="text-base font-black text-white flex items-center gap-2">
+                <PlusCircle className="text-[#00E5FF]" size={18} />
+                MINT / DEPOSIT SCRATCHER NFTS
+              </h3>
               <button
                 onClick={() => setShowReplenishModal(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold cursor-pointer"
+                className="text-slate-400 hover:text-white"
               >
                 ✕
               </button>
             </div>
 
             <p className="text-xs text-slate-400">
-              Mint Verse Scratcher NFTs to your Admin Vault inventory to send to users.
+              Select tier and amount of Verse Scratcher NFTs to stock into the Admin Vault for dispatching to Telegram users.
             </p>
 
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Amount to Mint
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[500, 1000, 5000].map((amt) => (
-                    <button
-                      key={amt}
-                      type="button"
-                      onClick={() => setReplenishAmount(amt)}
-                      className={`py-2 rounded-xl border text-xs font-black transition-all cursor-pointer ${
-                        replenishAmount === amt
-                          ? 'border-[#00E5FF] bg-cyan-950/40 text-[#00E5FF]'
-                          : 'border-slate-800 bg-[#040813] text-slate-400'
-                      }`}
-                    >
-                      +{amt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Tier Type
+                  Scratcher Tier
                 </label>
                 <select
                   value={replenishTier}
                   onChange={(e) => setReplenishTier(e.target.value as ScratcherTierType)}
                   className="w-full p-3 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white focus:border-[#00E5FF] focus:outline-none"
                 >
-                  <option value="grand">Grand 8M VERSE</option>
-                  <option value="mega">Mega 1M VERSE</option>
-                  <option value="lucky">Lucky 250k VERSE</option>
-                  <option value="mini">Mini 50k VERSE</option>
+                  <option value="grand">Gold Grand (8,000,000 VERSE Max)</option>
+                  <option value="mega">Neon Mega (1,000,000 VERSE Max)</option>
+                  <option value="lucky">Cyan Lucky (250,000 VERSE Max)</option>
+                  <option value="mini">Purple Mini (50,000 VERSE Max)</option>
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  Amount of NFTs to Stock
+                </label>
+                <input
+                  type="number"
+                  min="10"
+                  max="50000"
+                  step="50"
+                  value={replenishAmount}
+                  onChange={(e) => setReplenishAmount(parseInt(e.target.value, 10) || 500)}
+                  className="w-full p-3 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white font-mono focus:border-[#00E5FF] focus:outline-none"
+                />
+              </div>
+
               <button
-                type="button"
-                disabled={isReplenishing}
                 onClick={handleReplenishVault}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 cursor-pointer"
+                disabled={isReplenishing}
+                className="w-full py-3.5 rounded-xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-cyan-500/20"
               >
                 {isReplenishing ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
-                    <span>Minting to Vault...</span>
+                    <span>Minting / Depositing...</span>
                   </>
                 ) : (
                   <>
-                    <PlusCircle size={16} />
-                    <span>Confirm Mint {replenishAmount} NFTs</span>
+                    <PlusCircle size={15} />
+                    <span>Stock {replenishAmount.toLocaleString()} NFTs into Vault</span>
                   </>
                 )}
               </button>
