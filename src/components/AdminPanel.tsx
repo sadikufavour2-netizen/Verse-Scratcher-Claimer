@@ -40,6 +40,7 @@ import {
   connectViaWalletConnect,
 } from '../services/walletService';
 import { VerseCoinLogo, PolygonBadge } from './VerseBrand';
+import { WalletConnectModal } from './WalletConnectModal';
 
 interface AdminPanelProps {
   onSwitchToUserPortal: () => void;
@@ -52,6 +53,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 }) => {
   // Admin's own dedicated connected wallet (Independent of user's wallet)
   const [adminAccount, setAdminAccount] = useState<WalletAccount | null>(null);
+  const [isAdminWalletModalOpen, setIsAdminWalletModalOpen] = useState(false);
   const [isConnectingAdminWallet, setIsConnectingAdminWallet] = useState(false);
   const [adminConnectError, setAdminConnectError] = useState<string | null>(null);
 
@@ -156,29 +158,28 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   }, [adminAccount?.address]);
 
-  // Connect Admin Wallet Handler
-  const handleConnectAdminWallet = async () => {
-    setIsConnectingAdminWallet(true);
+  // Connect Admin Wallet Handler - opens Web3 Wallet Selection Modal (MetaMask, WalletConnect, Coinbase, Address)
+  const handleConnectAdminWallet = () => {
+    setAdminConnectError(null);
+    setIsAdminWalletModalOpen(true);
+  };
+
+  // Called when admin successfully selects and connects their Web3 wallet
+  const handleConnectAdminSuccess = async (connectedAccount: WalletAccount) => {
+    setAdminAccount(connectedAccount);
+    setIsAdminWalletModalOpen(false);
     setAdminConnectError(null);
     try {
-      const res = await connectViaWalletConnect();
-      if (res.success && res.account) {
-        setAdminAccount(res.account);
-        await setAdminWalletApi(res.account.address);
-        fetchAdminWalletData(res.account.address);
-        if (onNotify) {
-          onNotify(
-            'Admin Wallet Connected',
-            `Admin connected with address ${res.account.address.slice(0, 6)}...${res.account.address.slice(-4)}`
-          );
-        }
-      } else {
-        setAdminConnectError(res.error || 'Admin wallet connection was cancelled.');
+      await setAdminWalletApi(connectedAccount.address);
+      fetchAdminWalletData(connectedAccount.address);
+      if (onNotify) {
+        onNotify(
+          'Admin Wallet Connected',
+          `Admin connected with address ${connectedAccount.address.slice(0, 6)}...${connectedAccount.address.slice(-4)}`
+        );
       }
     } catch (err: any) {
-      setAdminConnectError(err.message || 'Failed to connect admin wallet.');
-    } finally {
-      setIsConnectingAdminWallet(false);
+      console.warn('Error syncing admin address:', err);
     }
   };
 
@@ -513,20 +514,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             ) : (
               <button
                 onClick={handleConnectAdminWallet}
-                disabled={isConnectingAdminWallet}
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/20"
               >
-                {isConnectingAdminWallet ? (
-                  <>
-                    <RefreshCw size={13} className="animate-spin" />
-                    <span>Connecting...</span>
-                  </>
-                ) : (
-                  <>
-                    <Wallet size={13} />
-                    <span>Connect Wallet</span>
-                  </>
-                )}
+                <Wallet size={13} />
+                <span>Connect Wallet</span>
               </button>
             )}
           </div>
@@ -596,20 +587,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           <button
             onClick={handleConnectAdminWallet}
-            disabled={isConnectingAdminWallet}
-            className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-cyan-500/25 cursor-pointer"
+            className="px-6 py-3 rounded-2xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-cyan-500/25 cursor-pointer hover:scale-[1.02] active:scale-95 transition-all"
           >
-            {isConnectingAdminWallet ? (
-              <>
-                <RefreshCw size={15} className="animate-spin" />
-                <span>Connecting Wallet...</span>
-              </>
-            ) : (
-              <>
-                <Wallet size={16} />
-                <span>Connect Admin Wallet</span>
-              </>
-            )}
+            <Wallet size={16} />
+            <span>Connect Admin Wallet</span>
           </button>
         </div>
       )}
@@ -771,10 +752,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </p>
               <button
                 onClick={handleConnectAdminWallet}
-                disabled={isConnectingAdminWallet}
-                className="px-7 py-3 rounded-2xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-cyan-500/20"
+                className="px-7 py-3 rounded-2xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-cyan-500/20 hover:scale-[1.02] active:scale-95 transition-all"
               >
-                {isConnectingAdminWallet ? 'Connecting...' : 'Connect Admin Wallet'}
+                Connect Admin Wallet
               </button>
             </div>
           ) : totalNftsAvailable === 0 ? (
@@ -1385,6 +1365,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           </div>
         </div>
       )}
+
+      {/* Admin Web3 Wallet Connection Modal (MetaMask, Rabby, WalletConnect, Coinbase, Address) */}
+      <WalletConnectModal
+        isOpen={isAdminWalletModalOpen}
+        onClose={() => setIsAdminWalletModalOpen(false)}
+        onSuccess={handleConnectAdminSuccess}
+        onError={(err) => setAdminConnectError(err)}
+        title="CONNECT ADMIN WALLET"
+        subtitle="Polygon Mainnet — View balances & dispatch NFTs"
+        isAdminMode={true}
+      />
     </div>
   );
 };

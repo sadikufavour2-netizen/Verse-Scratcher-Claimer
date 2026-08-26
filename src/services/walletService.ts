@@ -938,6 +938,241 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
 }
 
 /**
+ * Checks if a Web3 browser wallet extension (MetaMask, Rabby, Coinbase, Brave, etc.) is available in window
+ */
+export function isInjectedWalletAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean((window as any).ethereum);
+}
+
+/**
+ * Detect specific injected wallet names
+ */
+export function getDetectedWalletInfo(): {
+  hasInjected: boolean;
+  isMetaMask: boolean;
+  isCoinbase: boolean;
+  isBrave: boolean;
+  isRabby: boolean;
+  isTrust: boolean;
+  walletName: string;
+} {
+  if (typeof window === 'undefined' || !(window as any).ethereum) {
+    return {
+      hasInjected: false,
+      isMetaMask: false,
+      isCoinbase: false,
+      isBrave: false,
+      isRabby: false,
+      isTrust: false,
+      walletName: 'Browser Wallet',
+    };
+  }
+
+  const eth = (window as any).ethereum;
+  const isMetaMask = Boolean(eth.isMetaMask && !eth.isRabby && !eth.isBraveWallet);
+  const isCoinbase = Boolean(eth.isCoinbaseWallet);
+  const isBrave = Boolean((navigator as any).brave && eth.isBraveWallet);
+  const isRabby = Boolean(eth.isRabby);
+  const isTrust = Boolean(eth.isTrust || eth.isTrustWallet);
+
+  let walletName = 'Browser Wallet';
+  if (isRabby) walletName = 'Rabby Wallet';
+  else if (isMetaMask) walletName = 'MetaMask';
+  else if (isCoinbase) walletName = 'Coinbase Wallet';
+  else if (isBrave) walletName = 'Brave Wallet';
+  else if (isTrust) walletName = 'Trust Wallet';
+
+  return {
+    hasInjected: true,
+    isMetaMask,
+    isCoinbase,
+    isBrave,
+    isRabby,
+    isTrust,
+    walletName,
+  };
+}
+
+/**
+ * Connect directly via Browser Web3 Wallet extension (MetaMask, Rabby, Coinbase, etc.)
+ * Triggers the browser extension's popup immediately on screen!
+ */
+export async function connectInjectedWallet(targetWalletName?: string): Promise<ConnectResult> {
+  if (typeof window === 'undefined' || !(window as any).ethereum) {
+    return {
+      success: false,
+      error: 'No Web3 browser wallet extension (like MetaMask, Rabby, or Coinbase Wallet) was found. Please open with a Web3 extension or use WalletConnect.',
+    };
+  }
+
+  try {
+    const ethereum = (window as any).ethereum;
+    // Handle multiple injected providers (e.g. both MetaMask and Coinbase installed)
+    let provider = ethereum;
+    if (ethereum.providers && Array.isArray(ethereum.providers)) {
+      if (targetWalletName?.toLowerCase().includes('metamask')) {
+        provider = ethereum.providers.find((p: any) => p.isMetaMask && !p.isRabby) || ethereum.providers[0];
+      } else if (targetWalletName?.toLowerCase().includes('coinbase')) {
+        provider = ethereum.providers.find((p: any) => p.isCoinbaseWallet) || ethereum.providers[0];
+      } else if (targetWalletName?.toLowerCase().includes('rabby')) {
+        provider = ethereum.providers.find((p: any) => p.isRabby) || ethereum.providers[0];
+      } else {
+        provider = ethereum.providers[0];
+      }
+    }
+
+    // Request account access directly (this triggers the wallet extension popup!)
+    const accounts = await provider.request({ method: 'eth_requestAccounts' });
+
+    if (!accounts || accounts.length === 0) {
+      throw new Error('No accounts selected in your wallet.');
+    }
+
+    const userAddress = accounts[0];
+
+    // Check and switch/add Polygon Mainnet (Chain ID 137 / 0x89)
+    let chainIdHex = '0x89';
+    try {
+      chainIdHex = await provider.request({ method: 'eth_chainId' });
+    } catch (e) {}
+
+    let chainId = parseInt(chainIdHex, 16) || 137;
+
+    if (chainId !== 137) {
+      try {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: POLYGON_MAINNET.chainIdHex }],
+        });
+        chainId = 137;
+      } catch (switchError: any) {
+        if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
+          try {
+            await provider.request({
+              method: 'wallet_addEthereumChain',
+              params: [
+                {
+                  chainId: POLYGON_MAINNET.chainIdHex,
+                  chainName: POLYGON_MAINNET.chainName,
+                  nativeCurrency: POLYGON_MAINNET.nativeCurrency,
+                  rpcUrls: POLYGON_MAINNET.rpcUrls,
+                  blockExplorerUrls: POLYGON_MAINNET.blockExplorerUrls,
+                },
+              ],
+            });
+            chainId = 137;
+          } catch (addErr) {
+            console.warn('Could not add Polygon network to wallet:', addErr);
+          }
+        }
+      }
+    }
+
+    cachedProvider = provider;
+
+    // Fetch real Polygon balances immediately
+    let initialBalances: RealBalancesResult = {
+      balanceMatic: 'Loading...',
+      balanceVerse: 'Loading...',
+      balanceMaticRaw: 0n,
+      balanceVerseRaw: 0n,
+    };
+
+    try {
+      initialBalances = await fetchRealBalances(userAddress);
+    } catch (bErr) {
+      console.warn('Initial balance query error for injected wallet:', bErr);
+    }
+
+    const detectedInfo = getDetectedWalletInfo();
+    const finalWalletName = targetWalletName || detectedInfo.walletName;
+
+    const account: WalletAccount = {
+      address: userAddress,
+      chainId,
+      walletType: 'injected',
+      walletName: finalWalletName,
+      balanceMatic: initialBalances.balanceMatic,
+      balanceVerse: initialBalances.balanceVerse,
+      balanceMaticRaw: initialBalances.balanceMaticRaw,
+      balanceVerseRaw: initialBalances.balanceVerseRaw,
+      balanceMaticError: initialBalances.balanceMaticError,
+      balanceVerseError: initialBalances.balanceVerseError,
+    };
+
+    cachedAccount = account;
+
+    // Attach listeners for live changes
+    if (provider.on) {
+      provider.on('accountsChanged', (newAccounts: string[]) => {
+        if (!newAccounts || newAccounts.length === 0) {
+          disconnectWallet();
+          if (typeof window !== 'undefined') window.location.reload();
+        }
+      });
+      provider.on('chainChanged', () => {
+        if (typeof window !== 'undefined') window.location.reload();
+      });
+    }
+
+    return {
+      success: true,
+      account,
+    };
+  } catch (err: any) {
+    console.error('Injected Web3 wallet connection error:', err);
+    return {
+      success: false,
+      error: err?.message || 'Unable to connect to Web3 browser wallet.',
+    };
+  }
+}
+
+/**
+ * Connect with a custom Polygon / Ethereum Address (Ideal for Admins, cold wallets, multisigs)
+ */
+export async function connectWithCustomAddress(
+  address: string,
+  walletName = 'Admin Wallet'
+): Promise<ConnectResult> {
+  const clean = address.trim();
+  if (!clean.startsWith('0x') || clean.length !== 42 || !/^0x[0-9a-fA-F]{40}$/.test(clean)) {
+    return {
+      success: false,
+      error: 'Please enter a valid 42-character Polygon/Ethereum address starting with 0x.',
+    };
+  }
+
+  try {
+    const balances = await fetchRealBalances(clean);
+    const account: WalletAccount = {
+      address: clean,
+      chainId: 137,
+      walletType: 'injected',
+      walletName,
+      balanceMatic: balances.balanceMatic,
+      balanceVerse: balances.balanceVerse,
+      balanceMaticRaw: balances.balanceMaticRaw,
+      balanceVerseRaw: balances.balanceVerseRaw,
+      balanceMaticError: balances.balanceMaticError,
+      balanceVerseError: balances.balanceVerseError,
+    };
+
+    cachedAccount = account;
+    return {
+      success: true,
+      account,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Failed to query on-chain data for this address.',
+    };
+  }
+}
+
+/**
  * Switches network to Polygon Mainnet safely.
  */
 export async function switchToPolygon(currentAccount: WalletAccount): Promise<{ success: boolean; error?: string }> {
