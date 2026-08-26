@@ -38,7 +38,8 @@ export async function getUserProfileApi(identifier: string): Promise<UserProfile
 export async function claimUserScratchersApi(
   telegramUsername: string,
   walletAddress: string,
-  allocationId?: string
+  allocationId?: string,
+  clientTxHash?: string
 ): Promise<{
   success: boolean;
   message: string;
@@ -50,7 +51,7 @@ export async function claimUserScratchersApi(
   const res = await fetch('/api/users/claim', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ telegramUsername, walletAddress, allocationId }),
+    body: JSON.stringify({ telegramUsername, walletAddress, allocationId, clientTxHash }),
   });
 
   if (!res.ok) {

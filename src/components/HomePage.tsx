@@ -165,9 +165,11 @@ export const HomePage: React.FC<HomePageProps> = ({
       }
 
       // Merge server tickets with on-chain tickets
-      const serverTickets: ScratcherTicket[] = (fetchedProfile?.tickets || []).map((st: any) =>
-        mapToScratcherTicket(st)
-      );
+      const serverTickets: ScratcherTicket[] = (
+        fetchedProfile?.activeScratchers ||
+        fetchedProfile?.tickets ||
+        []
+      ).map((st: any) => mapToScratcherTicket(st));
 
       const combinedMap = new Map<string, ScratcherTicket>();
       // Saved local tickets
@@ -685,7 +687,7 @@ export const HomePage: React.FC<HomePageProps> = ({
       </div>
 
       {/* 4. MY CLAIMED SCRATCHERS COLLECTION */}
-      {tickets.length > 0 && (
+      {tickets.length > 0 ? (
         <div id="home-claimed-tickets-section" className="space-y-6 pt-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-800">
             <div>
@@ -723,6 +725,18 @@ export const HomePage: React.FC<HomePageProps> = ({
               />
             ))}
           </div>
+        </div>
+      ) : (
+        <div id="home-no-tickets-section" className="p-8 sm:p-10 rounded-3xl bg-[#080D1E] border border-slate-800/80 text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-[#00E5FF]">
+            <Sparkles size={22} />
+          </div>
+          <h4 className="text-base font-black text-white uppercase tracking-wider">
+            NO VERSE SCRATCHERS IN WALLET
+          </h4>
+          <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+            When an Admin dispatches Verse Scratcher NFTs to your Telegram handle (<span className="text-cyan-300 font-mono">{savedTelegram || profile?.user?.telegramUsername || '@username'}</span>), press <strong className="text-[#00E5FF]">CLAIM SCRATCHERS</strong> above to load them directly into your collection.
+          </p>
         </div>
       )}
 

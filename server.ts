@@ -218,7 +218,7 @@ function generateScratchersForClaim(
     tickets.push({
       id,
       tokenId,
-      contractAddress: "0x892a0e4d7778b05615d9727dc0e8f3bf02ceb6e1",
+      contractAddress: "0x25aC84511dC02f0a149E0c2CebB4307a50567fF6",
       title: selectedTier.title,
       series: selectedTier.series,
       edition: `Edition #${tokenId}`,
@@ -253,17 +253,17 @@ async function startServer() {
   // API 2: Register / Connect User (Telegram + Wallet Address)
   app.post("/api/users/register", (req, res) => {
     const { telegramUsername, walletAddress } = req.body;
-    if (!telegramUsername || !walletAddress) {
-      return res.status(400).json({ error: "Telegram username and wallet address are required" });
+    if (!telegramUsername && !walletAddress) {
+      return res.status(400).json({ error: "Telegram username or wallet address is required" });
     }
 
-    const normTelegram = normalizeTelegram(telegramUsername);
-    const normAddress = normalizeAddress(walletAddress);
+    const normTelegram = telegramUsername ? normalizeTelegram(telegramUsername) : "";
+    const normAddress = walletAddress ? normalizeAddress(walletAddress) : "";
 
     let existingUserKey = Object.keys(dbState.users).find(
       (k) =>
-        normalizeTelegram(dbState.users[k].telegramUsername) === normTelegram ||
-        normalizeAddress(dbState.users[k].walletAddress) === normAddress
+        (normTelegram && normalizeTelegram(dbState.users[k].telegramUsername) === normTelegram) ||
+        (normAddress && normalizeAddress(dbState.users[k].walletAddress) === normAddress)
     );
 
     let user: StoredRegisteredUser;
@@ -271,7 +271,7 @@ async function startServer() {
     // Calculate total allocated / claimed / pending for this user across allocations
     const userAllocations = dbState.allocations.filter(
       (a) =>
-        normalizeTelegram(a.telegramUsername) === normTelegram ||
+        (normTelegram && normalizeTelegram(a.telegramUsername) === normTelegram) ||
         (normAddress && normalizeAddress(a.walletAddress) === normAddress)
     );
 
@@ -283,48 +283,54 @@ async function startServer() {
       .filter((a) => a.status === "APPROVED")
       .reduce((sum, a) => sum + a.amount, 0);
 
+    const finalTelegram = normTelegram || (existingUserKey ? dbState.users[existingUserKey].telegramUsername : "");
+    const finalAddress = walletAddress || (existingUserKey ? dbState.users[existingUserKey].walletAddress : "");
+
     if (existingUserKey && dbState.users[existingUserKey]) {
       user = {
         ...dbState.users[existingUserKey],
-        telegramUsername: normTelegram,
-        walletAddress: walletAddress,
+        telegramUsername: finalTelegram,
+        walletAddress: finalAddress,
         lastActiveAt: new Date().toISOString(),
-        totalAllocated,
-        totalClaimed,
+        totalAllocated: Math.max(dbState.users[existingUserKey].totalAllocated, totalAllocated),
+        totalClaimed: Math.max(dbState.users[existingUserKey].totalClaimed, totalClaimed),
         pendingClaim,
       };
       dbState.users[existingUserKey] = user;
     } else {
       user = {
         id: `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-        telegramUsername: normTelegram,
-        walletAddress: walletAddress,
+        telegramUsername: finalTelegram,
+        walletAddress: finalAddress,
         registeredAt: new Date().toISOString(),
         lastActiveAt: new Date().toISOString(),
         totalAllocated,
         totalClaimed,
         pendingClaim,
       };
-      dbState.users[normTelegram] = user;
+      const key = finalTelegram || finalAddress || `usr_${Date.now()}`;
+      dbState.users[key] = user;
     }
 
-    // Also update any previous allocations assigned to this telegram handle with the newly connected wallet
-    dbState.allocations.forEach((alloc) => {
-      if (normalizeTelegram(alloc.telegramUsername) === normTelegram) {
-        alloc.walletAddress = walletAddress;
-      }
-    });
+    // Also link any existing allocations for this telegram handle to the wallet address
+    if (finalAddress && finalTelegram) {
+      dbState.allocations.forEach((alloc) => {
+        if (normalizeTelegram(alloc.telegramUsername) === finalTelegram) {
+          alloc.walletAddress = finalAddress;
+        }
+      });
+    }
 
     saveDatabase();
 
     const pendingAllocations = dbState.allocations.filter(
       (a) =>
-        (normalizeTelegram(a.telegramUsername) === normTelegram ||
-          normalizeAddress(a.walletAddress) === normAddress) &&
+        ((finalTelegram && normalizeTelegram(a.telegramUsername) === finalTelegram) ||
+          (normAddress && normalizeAddress(a.walletAddress) === normAddress)) &&
         a.status === "APPROVED"
     );
 
-    const activeScratchers = dbState.userTickets[normAddress] || [];
+    const activeScratchers = normAddress ? dbState.userTickets[normAddress] || [] : [];
 
     res.json({
       success: true,
@@ -380,7 +386,7 @@ async function startServer() {
 
   // API 4: User Claim Scratchers Allocated by Admin
   app.post("/api/users/claim", (req, res) => {
-    const { telegramUsername, walletAddress, allocationId } = req.body;
+    const { telegramUsername, walletAddress, allocationId, clientTxHash } = req.body;
     if (!telegramUsername || !walletAddress) {
       return res.status(400).json({ error: "Telegram handle and wallet address required" });
     }
@@ -408,7 +414,10 @@ async function startServer() {
 
     let totalClaimedAmount = 0;
     const generatedTickets: StoredScratcher[] = [];
-    const txHash = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+    const txHash =
+      clientTxHash && clientTxHash.startsWith("0x") && clientTxHash.length >= 42
+        ? clientTxHash
+        : "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
 
     eligibleAllocations.forEach((alloc) => {
       const count = alloc.amount;
