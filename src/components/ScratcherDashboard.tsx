@@ -13,11 +13,16 @@ import {
   PlusCircle,
   Search,
   AlertTriangle,
+  Send,
+  Layers,
+  Crown,
 } from 'lucide-react';
-import { ConnectionStatus, ScratcherTicket, WalletAccount } from '../types';
+import { ConnectionStatus, ScratcherTicket, WalletAccount, UserProfileResponse } from '../types';
 import { ScratchCard } from './ScratchCard';
 import { ClaimModal } from './ClaimModal';
 import { PolygonBadge, VerseCoinLogo } from './VerseBrand';
+import { TelegramConnectionCard } from './TelegramConnectionCard';
+import { ApprovedClaimBanner } from './ApprovedClaimBanner';
 import {
   fetchRealScratchersForAddress,
   saveScratchersForAddress,
@@ -25,6 +30,7 @@ import {
   getSavedScratchersForAddress,
   fetchRealBalances,
 } from '../services/walletService';
+import { getUserProfileApi, updateTicketStatusApi } from '../services/apiService';
 
 interface ScratcherDashboardProps {
   status: ConnectionStatus;
@@ -67,8 +73,11 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
   const [showImportForm, setShowImportForm] = useState(false);
   const [isCheckingToken, setIsCheckingToken] = useState(false);
 
-  // Load Real Polygon on-chain data for connected address
-  const loadPolygonData = useCallback(async (address: string, showToast = false) => {
+  // User Profile & Allocations State
+  const [userProfile, setUserProfile] = useState<UserProfileResponse | null>(null);
+
+  // Load Real Polygon on-chain data and merge with server-stored claimed tickets
+  const loadPolygonAndServerData = useCallback(async (address: string, showToast = false) => {
     setIsLoadingNFTs(true);
     setLoadError(null);
 
@@ -79,13 +88,51 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
     }
 
     try {
-      // Parallel execution for real on-chain balances and real NFT scanner
-      const [realTickets, balances] = await Promise.all([
+      // Parallel execution for real on-chain balances, on-chain scanner, and user profile
+      const [realTickets, balances, profile] = await Promise.all([
         fetchRealScratchersForAddress(address),
         fetchRealBalances(address),
+        getUserProfileApi(address).catch(() => null),
       ]);
 
-      setTickets(realTickets);
+      if (profile) {
+        setUserProfile(profile);
+      }
+
+      // Merge server tickets (claimed from admin allocations) with on-chain tickets
+      const serverTickets: ScratcherTicket[] = (profile?.tickets || []).map((st: any) => ({
+        id: st.id,
+        tokenId: st.tokenId,
+        tier: st.tier || 'grand',
+        name: st.name || `Verse Scratcher #${st.tokenId}`,
+        type: (st.type as any) || '8M Grand Prize',
+        image: st.image || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
+        status: st.status || 'unscratched',
+        scratchPercentage: st.scratchPercentage || 0,
+        unscratchedImage: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&auto=format&fit=crop&q=80',
+        prizePoolVerse: 8000000,
+        numbers: st.numbers || [7, 13, 21, 88, 77, 99],
+        winningNumbers: st.winningNumbers || [7, 88, 77],
+        prizes: st.prizes || [
+          { number: 7, verseAmount: 5000000, symbol: 'VERSE' },
+          { number: 88, verseAmount: 2000000, symbol: 'VERSE' },
+          { number: 77, verseAmount: 1000000, symbol: 'VERSE' },
+        ],
+        totalVerseValue: st.totalVerseValue || 8000000,
+        totalMaticValue: 0,
+        claimTxHash: st.claimTxHash,
+        claimTimestamp: st.claimTimestamp,
+      }));
+
+      // Combine ensuring no duplicates by ID
+      const combinedMap = new Map<string, ScratcherTicket>();
+      serverTickets.forEach((t) => combinedMap.set(t.id, t));
+      realTickets.forEach((t) => combinedMap.set(t.id, t));
+      const mergedTickets = Array.from(combinedMap.values());
+
+      setTickets(mergedTickets);
+      saveScratchersForAddress(address, mergedTickets);
+
       if (onUpdateAccountBalance) {
         onUpdateAccountBalance(
           balances.balanceMatic,
@@ -100,7 +147,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       }
 
       if (showToast && onNotify) {
-        onNotify('Polygon Synced', `Updated on-chain balances and discovered ${realTickets.length} scratchers.`);
+        onNotify('Polygon Synced', `Updated on-chain balances and discovered ${mergedTickets.length} scratchers.`);
       }
     } catch (err: any) {
       console.warn('Polygon on-chain fetch encountered an issue:', err);
@@ -113,9 +160,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
   // Trigger load when account changes
   useEffect(() => {
     if (account?.address && status === 'CONNECTED') {
-      loadPolygonData(account.address);
+      loadPolygonAndServerData(account.address);
 
-      // Auto-poll balances every 20 seconds to keep live
+      // Auto-poll balances and profile every 15 seconds
       const interval = setInterval(() => {
         if (account.address) {
           fetchRealBalances(account.address)
@@ -134,22 +181,26 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               }
             })
             .catch(() => {});
+
+          getUserProfileApi(account.address)
+            .then((p) => setUserProfile(p))
+            .catch(() => {});
         }
-      }, 20000);
+      }, 15000);
 
       return () => clearInterval(interval);
     } else {
       setTickets([]);
       setLoadError(null);
     }
-  }, [account?.address, status, loadPolygonData, onUpdateAccountBalance]);
+  }, [account?.address, status, loadPolygonAndServerData, onUpdateAccountBalance]);
 
   // Refresh handler
   const handleRefreshAll = async () => {
     if (!account?.address) return;
     setIsRefreshing(true);
     try {
-      await loadPolygonData(account.address, true);
+      await loadPolygonAndServerData(account.address, true);
     } finally {
       setIsRefreshing(false);
     }
@@ -194,6 +245,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       );
       if (account?.address) {
         saveScratchersForAddress(account.address, updated);
+        updateTicketStatusApi(account.address, ticketId, 'scratched', 100);
       }
       return updated;
     });
@@ -217,6 +269,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       });
       if (account?.address) {
         saveScratchersForAddress(account.address, updated);
+        claimedTicketIds.forEach((id) => updateTicketStatusApi(account.address, id, 'claimed', 100));
       }
       return updated;
     });
@@ -269,6 +322,20 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
     });
   };
 
+  // Called when user claims approved scratchers from admin
+  const handleNewlyClaimedScratchers = (newTickets: ScratcherTicket[]) => {
+    setTickets((prev) => {
+      const combinedMap = new Map<string, ScratcherTicket>();
+      prev.forEach((t) => combinedMap.set(t.id, t));
+      newTickets.forEach((t) => combinedMap.set(t.id, t));
+      const merged = Array.from(combinedMap.values());
+      if (account?.address) {
+        saveScratchersForAddress(account.address, merged);
+      }
+      return merged;
+    });
+  };
+
   // Calculations
   const filteredTickets = tickets.filter((t) => {
     if (activeFilter === 'all') return true;
@@ -311,7 +378,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               </h1>
 
               <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
-                Connect your Web3 wallet on Polygon to discover your real Verse Scratcher NFTs, scratch for rewards, and claim prizes directly to your connected address.
+                Connect your Telegram username &amp; Web3 wallet on Polygon to receive approved scratcher allocations, scratch for rewards, and claim prizes directly to your connected address.
               </p>
 
               {status === 'WRONG_NETWORK' && (
@@ -406,9 +473,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-[#00E5FF] font-black">
                 1
               </div>
-              <h3 className="text-base font-extrabold text-white">Connect Web3 Wallet</h3>
+              <h3 className="text-base font-extrabold text-white">Connect Telegram &amp; Wallet</h3>
               <p className="text-xs text-slate-400 leading-relaxed font-normal">
-                Connect your Bitcoin.com Wallet or any Web3 wallet on Polygon Mainnet.
+                Connect your Telegram username and Polygon address to be registered in the admin distribution queue.
               </p>
             </div>
 
@@ -416,9 +483,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 font-black">
                 2
               </div>
-              <h3 className="text-base font-extrabold text-white">Discover &amp; Scratch</h3>
+              <h3 className="text-base font-extrabold text-white">Admin Approval &amp; Claim</h3>
               <p className="text-xs text-slate-400 leading-relaxed font-normal">
-                Automatically scans Polygon for your owned Verse Scratcher NFTs and reveals matching prizes.
+                Once the admin approves scratchers for your handle, claim them into your deck with one click.
               </p>
             </div>
 
@@ -426,9 +493,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-black">
                 3
               </div>
-              <h3 className="text-base font-extrabold text-white">Claim Rewards</h3>
+              <h3 className="text-base font-extrabold text-white">Scratch &amp; Win VERSE</h3>
               <p className="text-xs text-slate-400 leading-relaxed font-normal">
-                Sign the Polygon claim transaction using POL gas to transfer VERSE directly to your address.
+                Scratch tickets to reveal prizes up to 8,000,000 VERSE and claim directly to your connected wallet.
               </p>
             </div>
           </div>
@@ -438,6 +505,23 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
       {/* 2. CONNECTED DASHBOARD VIEW */}
       {status === 'CONNECTED' && account && (
         <div id="connected-scratcher-dashboard" className="space-y-8">
+          {/* Telegram Connection & Registration Card */}
+          <TelegramConnectionCard
+            account={account}
+            onProfileLoaded={(p) => setUserProfile(p)}
+            onNotify={(title, msg) => onNotify && onNotify(title, msg)}
+            onConnectWalletClick={onConnectClick}
+          />
+
+          {/* Approved Scratchers Ready to Claim Banner (from Admin Allocations) */}
+          <ApprovedClaimBanner
+            account={account}
+            profile={userProfile}
+            onScratchersClaimed={handleNewlyClaimedScratchers}
+            onNotify={(title, msg, amt) => onNotify && onNotify(title, msg, amt)}
+            onRefreshProfile={() => handleRefreshAll()}
+          />
+
           {/* Top Banner & Stats Overview */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
             <div>
@@ -720,7 +804,7 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
           {isLoadingNFTs && tickets.length === 0 ? (
             <div className="p-16 text-center bg-[#080C1A] rounded-3xl border border-slate-800 space-y-4">
               <RefreshCw size={36} className="mx-auto text-[#00E5FF] animate-spin" />
-              <h4 className="text-lg font-black text-white">SCANNING POLYGON...</h4>
+              <h4 className="text-lg font-black text-white">SCANNING POLYGON &amp; VAULT...</h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
                 Finding your Verse Scratcher NFTs on Polygon Mainnet...
               </p>
@@ -748,9 +832,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
 
               {activeFilter === 'unscratched' ? (
                 <>
-                  <h4 className="text-xl font-black text-white">NO UNCLAIMED SCRATCHERS FOUND</h4>
+                  <h4 className="text-xl font-black text-white">NO UNSCRATCHED TICKETS FOUND</h4>
                   <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
-                    You don't currently have any unclaimed Verse Scratcher NFTs.
+                    Connect your Telegram username above to receive allocated scratchers approved by the admin.
                   </p>
                 </>
               ) : activeFilter === 'scratched' ? (
@@ -769,9 +853,9 @@ export const ScratcherDashboard: React.FC<ScratcherDashboardProps> = ({
                 </>
               ) : (
                 <>
-                  <h4 className="text-xl font-black text-white">NO VERSE SCRATCHERS FOUND</h4>
+                  <h4 className="text-xl font-black text-white">NO VERSE SCRATCHERS IN DECK</h4>
                   <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
-                    Your connected Polygon address does not currently have any Verse Scratcher NFTs.
+                    Connect your Telegram username above to receive scratchers approved by the admin, or check for your on-chain scratchers.
                   </p>
                 </>
               )}

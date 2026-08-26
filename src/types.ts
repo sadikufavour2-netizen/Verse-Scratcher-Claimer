@@ -56,6 +56,73 @@ export interface ScratcherTicket {
   metadataUri?: string;
 }
 
+export interface RegisteredUser {
+  id: string;
+  telegramUsername: string; // e.g. "@username"
+  walletAddress: string; // EVM address
+  registeredAt: string;
+  lastActiveAt: string;
+  totalAllocated: number;
+  totalClaimed: number;
+  pendingClaim: number;
+}
+
+export type ScratcherTierType = 'grand' | 'mega' | 'lucky' | 'mini';
+
+export interface ScratcherVaultInventory {
+  totalInVault: number;
+  allocatedCount: number;
+  claimedCount: number;
+  adminWalletAddress: string | null;
+  tiers: {
+    grand: number; // 8,000,000 VERSE Max
+    mega: number;  // 1,000,000 VERSE Max
+    lucky: number; // 250,000 VERSE Max
+    mini: number;  // 50,000 VERSE Max
+  };
+}
+
+export interface AllocationRecord {
+  id: string;
+  telegramUsername: string;
+  walletAddress: string;
+  amount: number;
+  tier: ScratcherTierType | 'mixed';
+  status: 'APPROVED' | 'CLAIMED' | 'PARTIALLY_CLAIMED';
+  approvedAt: string;
+  claimedAt?: string | null;
+  allocatedByAdminWallet?: string | null;
+  ticketIds: string[];
+}
+
+export interface ClaimEventLog {
+  id: string;
+  telegramUsername: string;
+  walletAddress: string;
+  amount: number;
+  claimedAt: string;
+  txHash: string;
+  tier: string;
+}
+
+export interface AdminOverviewResponse {
+  inventory: ScratcherVaultInventory;
+  users: RegisteredUser[];
+  allocations: AllocationRecord[];
+  claims: ClaimEventLog[];
+  adminWallet: string | null;
+}
+
+export interface UserProfileResponse {
+  user: RegisteredUser | null;
+  pendingAllocations: AllocationRecord[];
+  allocations?: AllocationRecord[];
+  claimableScratchersCount: number;
+  activeScratchers: ScratcherTicket[];
+  tickets?: any[];
+  claimsHistory: ClaimEventLog[];
+}
+
 export interface NetworkConfig {
   chainId: number;
   chainIdHex: string;

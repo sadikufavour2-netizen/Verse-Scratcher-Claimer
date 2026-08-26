@@ -1,6 +1,6 @@
 {
   "name": "Verse Scratcher Claimer",
-  "description": "Claim and scratch Verse Scratcher NFTs on Polygon network with Bitcoin.com Wallet and WalletConnect support.",
+  "description": "Telegram-integrated Verse Scratcher distribution and claimer platform on Polygon network with Admin management panel and wallet sync.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

@@ -3,24 +3,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useCallback } from 'react';
-import { ConnectionStatus, WalletAccount, POLYGON_MAINNET } from './types';
+import { useState, useCallback, useEffect } from 'react';
+import { ConnectionStatus, WalletAccount, POLYGON_MAINNET, UserProfileResponse } from './types';
 import { switchToPolygon, disconnectWallet } from './services/walletService';
+import { getUserProfileApi } from './services/apiService';
 import { WalletErrorBoundary } from './components/WalletErrorBoundary';
 import { Navbar } from './components/Navbar';
-import { ScratcherDashboard } from './components/ScratcherDashboard';
+import { HomePage } from './components/HomePage';
+import { AdminPanel } from './components/AdminPanel';
+import { AdminPinModal } from './components/AdminPinModal';
 import { WalletConnectModal } from './components/WalletConnectModal';
 import { NotificationToast, ToastNotification } from './components/NotificationToast';
+import { Lock, Shield } from 'lucide-react';
 
 export default function App() {
-  // Safe initial React state - Zero WalletConnect execution on initial mount
+  // Navigation & View mode: 'home' (Home Page with Balances & Claim) | 'admin' (Admin Allocation Panel)
+  const [currentView, setCurrentView] = useState<'home' | 'admin'>('home');
+
+  // Admin PIN Protection state
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+
+  // Wallet Connection state
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('DISCONNECTED');
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
+  const [pendingApprovedCount, setPendingApprovedCount] = useState<number>(0);
 
-  // Triggered ONLY after explicit user click on "CONNECT WALLET"
+  // Triggered after click on "CONNECT WALLET" in the page
   const handleOpenConnect = () => {
     setIsModalOpen(true);
     setErrorMessage(null);
@@ -50,6 +62,28 @@ export default function App() {
     setNotifications((prev) => prev.filter((t) => t.id !== id));
   };
 
+  // Check pending approved allocations for active user
+  const checkPendingAllocations = useCallback(async () => {
+    const savedTelegram = localStorage.getItem('verse_telegram_username');
+    const identifier = account?.address || savedTelegram;
+    if (!identifier) return;
+
+    try {
+      const profile: UserProfileResponse = await getUserProfileApi(identifier);
+      const pending = (profile.allocations || []).filter((a) => a.status === 'APPROVED');
+      const count = pending.reduce((sum, a) => sum + a.amount, 0);
+      setPendingApprovedCount(count);
+    } catch (e) {
+      // quiet catch
+    }
+  }, [account?.address]);
+
+  useEffect(() => {
+    checkPendingAllocations();
+    const interval = setInterval(checkPendingAllocations, 8000);
+    return () => clearInterval(interval);
+  }, [checkPendingAllocations]);
+
   // Called when wallet connects successfully
   const handleConnectSuccess = (connectedAccount: WalletAccount) => {
     setAccount(connectedAccount);
@@ -66,7 +100,7 @@ export default function App() {
     }
   };
 
-  // Update account balance dynamically with real BigInt precision, error states, and multi-chain detection
+  // Update account balance dynamically
   const handleUpdateAccountBalance = (
     matic: string,
     verse: string,
@@ -137,44 +171,48 @@ export default function App() {
     handleNotify('Wallet Disconnected', 'You have disconnected your Polygon wallet.');
   };
 
-  // Switch / Connect another account handler
-  const handleSwitchAccount = () => {
-    setIsModalOpen(true);
+  // Handle Admin Panel Click from Footer
+  const handleAdminClick = () => {
+    if (isAdminUnlocked) {
+      setCurrentView('admin');
+    } else {
+      setIsPinModalOpen(true);
+    }
   };
 
-  // Retry handler
-  const handleRetry = () => {
-    setErrorMessage(null);
-    setConnectionStatus('DISCONNECTED');
-    setIsModalOpen(true);
+  const handleAdminPinSuccess = () => {
+    setIsAdminUnlocked(true);
+    setIsPinModalOpen(false);
+    setCurrentView('admin');
+    handleNotify('Admin Access Granted', 'PIN 2004 verified. Welcome to Verse Admin Panel.');
   };
 
   return (
     <WalletErrorBoundary>
       <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col selection:bg-[#00E5FF]/30 selection:text-[#00E5FF] font-sans antialiased">
-        {/* Navigation Bar */}
-        <Navbar
-          status={connectionStatus}
-          account={account}
-          errorMessage={errorMessage}
-          onSwitchNetworkClick={handleSwitchNetwork}
-          onDisconnectClick={handleDisconnect}
-          onSwitchAccountClick={handleSwitchAccount}
-          onRetryClick={handleRetry}
-        />
+        {/* Navigation Bar (Clean - top tabs & connect wallet button removed) */}
+        <Navbar onLogoClick={() => setCurrentView('home')} />
 
         {/* Main Application Body */}
         <main className="flex-1">
-          <ScratcherDashboard
-            status={connectionStatus}
-            account={account}
-            errorMessage={errorMessage}
-            onConnectClick={handleOpenConnect}
-            onSwitchNetworkClick={handleSwitchNetwork}
-            onRetryClick={handleRetry}
-            onUpdateAccountBalance={handleUpdateAccountBalance}
-            onNotify={handleNotify}
-          />
+          {currentView === 'admin' ? (
+            <AdminPanel
+              account={account}
+              onConnectWallet={handleOpenConnect}
+              onSwitchToUserPortal={() => setCurrentView('home')}
+              onNotify={handleNotify}
+            />
+          ) : (
+            <HomePage
+              status={connectionStatus}
+              account={account}
+              onConnectClick={handleOpenConnect}
+              onSwitchToConnectView={() => {}}
+              onSwitchToAdminView={handleAdminClick}
+              onUpdateAccountBalance={handleUpdateAccountBalance}
+              onNotify={handleNotify}
+            />
+          )}
         </main>
 
         {/* Toast Notifications */}
@@ -191,12 +229,43 @@ export default function App() {
           onError={handleConnectError}
         />
 
-        {/* Footer with "Verse by Bitcoin.com" and @Getverse Telegram link */}
+        {/* Admin PIN 2004 Modal */}
+        <AdminPinModal
+          isOpen={isPinModalOpen}
+          onClose={() => setIsPinModalOpen(false)}
+          onSuccess={handleAdminPinSuccess}
+        />
+
+        {/* Footer with "Verse by Bitcoin.com", Admin Panel (PIN 2004) at the down footer side, and @Getverse Telegram link */}
         <footer className="border-t border-slate-800/80 bg-[#04060C] py-6 px-4">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <span className="font-bold text-slate-300 text-sm tracking-wide">
-              Verse by Bitcoin.com
-            </span>
+            <div className="flex items-center gap-4">
+              <span className="font-bold text-slate-300 text-sm tracking-wide">
+                Verse by Bitcoin.com
+              </span>
+              <span className="text-slate-600 text-xs">|</span>
+
+              {/* Admin Panel PIN 2004 Button */}
+              {currentView === 'admin' ? (
+                <button
+                  id="footer-back-home-btn"
+                  onClick={() => setCurrentView('home')}
+                  className="text-xs font-bold text-[#00E5FF] hover:underline cursor-pointer flex items-center gap-1.5"
+                >
+                  <span>Back to Home</span>
+                </button>
+              ) : (
+                <button
+                  id="footer-admin-panel-btn"
+                  onClick={handleAdminClick}
+                  className="text-xs font-bold text-slate-400 hover:text-[#00E5FF] transition-colors cursor-pointer flex items-center gap-1.5 group"
+                >
+                  <Lock size={12} className="text-slate-500 group-hover:text-[#00E5FF] transition-colors" />
+                  <span>Admin Panel (PIN: 2004)</span>
+                </button>
+              )}
+            </div>
+
             <a
               id="footer-telegram-link"
               href="https://t.me/GetVerse"
