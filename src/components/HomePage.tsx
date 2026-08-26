@@ -32,6 +32,7 @@ import {
   fetchRealScratchersForAddress,
   saveScratchersForAddress,
   getSavedScratchersForAddress,
+  formatBalanceDisplay,
 } from '../services/walletService';
 import {
   getUserProfileApi,
@@ -281,12 +282,10 @@ export const HomePage: React.FC<HomePageProps> = ({
       saveScratchersForAddress(walletAddress, updated);
       refreshAllData();
     } catch (err: any) {
-      const errMsg = err.message || 'No approved scratchers found';
+      const errMsg = err.message || '';
       setClaimStatusMessage({
         type: 'not_found',
-        text: errMsg.includes('No approved')
-          ? `No approved scratchers found for Telegram handle ${telegramUsername}. Ask the Admin to send scratcher NFTs to this username.`
-          : errMsg,
+        text: `No scratchers to claim for Telegram handle ${telegramUsername}. Ask the Admin to send Verse Scratcher NFTs to this username.`,
       });
     } finally {
       setIsClaiming(false);
@@ -490,12 +489,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div className="relative z-10">
               <div className="text-3xl sm:text-4xl font-black text-white tracking-tight flex items-baseline gap-2">
                 <span className="font-mono">
-                  {account?.balanceVerse !== undefined && account?.balanceVerse !== null
-                    ? Number(account.balanceVerse).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })
-                    : '0.00'}
+                  {formatBalanceDisplay(account?.balanceVerse, 2, '0.00')}
                 </span>
                 <span className="text-base sm:text-lg font-bold text-[#00E5FF]">VERSE</span>
               </div>
@@ -535,12 +529,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div className="relative z-10">
               <div className="text-3xl sm:text-4xl font-black text-white tracking-tight flex items-baseline gap-2">
                 <span className="font-mono">
-                  {account?.balanceMatic !== undefined && account?.balanceMatic !== null
-                    ? Number(account.balanceMatic).toLocaleString(undefined, {
-                        minimumFractionDigits: 4,
-                        maximumFractionDigits: 4,
-                      })
-                    : '0.0000'}
+                  {formatBalanceDisplay(account?.balanceMatic, 4, '0.0000')}
                 </span>
                 <span className="text-base sm:text-lg font-bold text-purple-400">POL</span>
               </div>
@@ -644,7 +633,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                 ) : claimStatusMessage.type === 'not_found' ? (
                   <>
                     <AlertCircle size={16} className="text-amber-400" />
-                    <span>USERNAME NOT FOUND OR NO SCRATCHERS SENT YET</span>
+                    <span>NO SCRATCHERS TO CLAIM</span>
                   </>
                 ) : (
                   <>

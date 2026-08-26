@@ -402,7 +402,7 @@ async function startServer() {
 
     if (eligibleAllocations.length === 0) {
       return res.status(400).json({
-        error: "No approved scratchers pending claim for this Telegram handle / Wallet.",
+        error: "No scratchers to claim",
       });
     }
 

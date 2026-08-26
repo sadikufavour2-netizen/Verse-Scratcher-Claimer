@@ -127,6 +127,37 @@ export function formatBigIntBalance(rawBalance: bigint, decimals = 18, maxFracti
 }
 
 /**
+ * Safe balance formatter for UI display.
+ * Strips commas, handles null/undefined/Loading, and never produces NaN.
+ */
+export function formatBalanceDisplay(
+  val: string | number | undefined | null,
+  decimals = 2,
+  fallback = '0.00'
+): string {
+  if (val === undefined || val === null || val === '') return fallback;
+  if (typeof val === 'number') {
+    if (isNaN(val)) return fallback;
+    return val.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+  if (typeof val === 'string') {
+    if (val === 'Loading...') return 'Loading...';
+    if (val.toLowerCase().includes('unable') || val.toLowerCase().includes('error')) return fallback;
+    const clean = val.replace(/,/g, '').trim();
+    const num = parseFloat(clean);
+    if (isNaN(num)) return fallback;
+    return num.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    });
+  }
+  return fallback;
+}
+
+/**
  * Helper to execute RPC JSON-RPC calls on Polygon Mainnet with automatic fallback
  */
 export async function callPolygonRpc(method: string, params: any[]): Promise<any> {

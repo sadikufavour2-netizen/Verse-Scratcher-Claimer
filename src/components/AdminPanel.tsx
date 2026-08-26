@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   Shield,
   Layers,
-  Users,
   CheckCircle2,
   Clock,
   Coins,
@@ -10,26 +9,22 @@ import {
   PlusCircle,
   RefreshCw,
   Search,
-  Copy,
-  ExternalLink,
   Sparkles,
   AlertCircle,
   Database,
   ArrowRight,
-  UserCheck,
   PackagePlus,
   Flame,
   Crown,
-  Check,
   Wallet,
+  Check,
+  ExternalLink,
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
-  RegisteredUser,
-  AllocationRecord,
-  ScratcherVaultInventory,
   ScratcherTierType,
   WalletAccount,
+  ScratcherTicket,
 } from '../types';
 import {
   getAdminOverviewApi,
@@ -37,6 +32,10 @@ import {
   addVaultInventoryApi,
   setAdminWalletApi,
 } from '../services/apiService';
+import {
+  fetchRealScratchersForAddress,
+  formatBalanceDisplay,
+} from '../services/walletService';
 import { VerseCoinLogo, PolygonBadge } from './VerseBrand';
 
 interface AdminPanelProps {
@@ -53,32 +52,43 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   onNotify,
 }) => {
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
+  const [adminOnChainNfts, setAdminOnChainNfts] = useState<ScratcherTicket[]>([]);
+  const [isLoadingNfts, setIsLoadingNfts] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
 
-  // Send NFT Scratchers form state
+  // Send NFT Scratchers form state (Batch Tab)
   const [rawInput, setRawInput] = useState<string>('');
   const [selectedTier, setSelectedTier] = useState<ScratcherTierType>('grand');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [allocationSuccessMsg, setAllocationSuccessMsg] = useState<string | null>(null);
   const [allocationErrorMsg, setAllocationErrorMsg] = useState<string | null>(null);
 
-  // Single Quick Send Modal / Form
-  const [quickSendUsername, setQuickSendUsername] = useState<string>('');
-  const [quickSendAmount, setQuickSendAmount] = useState<number>(1);
-  const [quickSendTier, setQuickSendTier] = useState<ScratcherTierType>('grand');
-  const [showQuickSendModal, setShowQuickSendModal] = useState<boolean>(false);
+  // Touch / Interactive Send Modal
+  const [selectedNftForSend, setSelectedNftForSend] = useState<{
+    tier: ScratcherTierType;
+    title: string;
+    image: string;
+    maxPrize: string;
+    available: number;
+  } | null>(null);
 
-  // Replenish vault modal / input state
+  const [sendMode, setSendMode] = useState<'single' | 'batch'>('single');
+  const [singleUsername, setSingleUsername] = useState<string>('');
+  const [singleAmount, setSingleAmount] = useState<number>(1);
+  const [modalBatchInput, setModalBatchInput] = useState<string>('');
+  const [modalError, setModalError] = useState<string | null>(null);
+  const [modalSuccess, setModalSuccess] = useState<string | null>(null);
+
+  // Replenish vault modal state
   const [showReplenishModal, setShowReplenishModal] = useState(false);
   const [replenishAmount, setReplenishAmount] = useState<number>(1000);
   const [replenishTier, setReplenishTier] = useState<ScratcherTierType>('grand');
   const [isReplenishing, setIsReplenishing] = useState(false);
 
-  // User directory search
+  // Search in records
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'nfts' | 'allocate' | 'users' | 'allocations' | 'claims'>('nfts');
+  const [activeTab, setActiveTab] = useState<'nfts' | 'batch' | 'records' | 'claims'>('nfts');
 
   const fetchOverview = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -94,6 +104,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Fetch real NFTs for admin address
+  const fetchAdminNfts = async (address: string) => {
+    setIsLoadingNfts(true);
+    try {
+      const nfts = await fetchRealScratchersForAddress(address);
+      setAdminOnChainNfts(nfts);
+    } catch (err) {
+      console.warn('Error querying admin on-chain NFTs:', err);
+    } finally {
+      setIsLoadingNfts(false);
+    }
+  };
+
   useEffect(() => {
     fetchOverview();
     const interval = setInterval(() => fetchOverview(false), 8000);
@@ -104,18 +127,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   useEffect(() => {
     if (account?.address) {
       setAdminWalletApi(account.address).catch(console.error);
+      fetchAdminNfts(account.address);
     }
   }, [account?.address]);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 2000);
-  };
-
   // Parse multi-line input: "@handle 5" or "handle, 10" or "@handle: 2"
-  const parseBatchInput = () => {
-    const lines = rawInput.split('\n');
+  const parseBatchInput = (text: string) => {
+    const lines = text.split('\n');
     const items: { username: string; amount: number; raw: string }[] = [];
     let totalCount = 0;
 
@@ -143,7 +161,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     return { items, totalCount };
   };
 
-  const { items: parsedItems, totalCount: parsedTotalCount } = parseBatchInput();
+  const { items: parsedItems, totalCount: parsedTotalCount } = parseBatchInput(rawInput);
 
   const handleBatchAllocate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +189,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       setAllocationSuccessMsg(res.message);
       if (onNotify) {
-        onNotify('NFT Scratchers Sent', res.message);
+        onNotify('NFT Scratchers Dispatched', res.message);
       }
       setRawInput('');
       fetchOverview(false);
@@ -182,27 +200,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleQuickSend = async (e: React.FormEvent) => {
+  // Handle Touch Send Modal Submission (One by One or Batch)
+  const handleModalSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    let cleaned = quickSendUsername.trim();
-    if (!cleaned) return;
-    if (!cleaned.startsWith('@')) cleaned = '@' + cleaned;
+    if (!selectedNftForSend) return;
 
+    setModalError(null);
+    setModalSuccess(null);
     setIsSubmitting(true);
+
     try {
-      const res = await batchAllocateApi(
-        [{ username: cleaned, amount: quickSendAmount, tier: quickSendTier }],
-        quickSendTier,
-        account?.address || data?.adminWallet || undefined
-      );
-      setShowQuickSendModal(false);
-      if (onNotify) {
-        onNotify('NFT Scratcher Sent', `Sent ${quickSendAmount} ${quickSendTier.toUpperCase()} scratcher(s) to ${cleaned}`);
+      if (sendMode === 'single') {
+        let cleaned = singleUsername.trim();
+        if (!cleaned) {
+          setModalError('Please enter a Telegram username (e.g. @username)');
+          setIsSubmitting(false);
+          return;
+        }
+        if (!cleaned.startsWith('@')) cleaned = '@' + cleaned;
+
+        const count = Math.max(1, singleAmount);
+        const res = await batchAllocateApi(
+          [{ username: cleaned, amount: count, tier: selectedNftForSend.tier }],
+          selectedNftForSend.tier,
+          account?.address || data?.adminWallet || undefined
+        );
+
+        setModalSuccess(`Successfully sent ${count} ${selectedNftForSend.title} to ${cleaned}!`);
+        if (onNotify) {
+          onNotify('NFT Scratcher Sent', `Sent ${count} ${selectedNftForSend.title} to ${cleaned}`);
+        }
+        setSingleUsername('');
+        fetchOverview(false);
+        setTimeout(() => {
+          setSelectedNftForSend(null);
+          setModalSuccess(null);
+        }, 1800);
+      } else {
+        const { items } = parseBatchInput(modalBatchInput);
+        if (items.length === 0) {
+          setModalError('Please enter at least one Telegram handle and quantity');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const payload = items.map((item) => ({
+          username: item.username,
+          amount: item.amount,
+          tier: selectedNftForSend.tier,
+        }));
+
+        const res = await batchAllocateApi(
+          payload,
+          selectedNftForSend.tier,
+          account?.address || data?.adminWallet || undefined
+        );
+
+        setModalSuccess(res.message);
+        if (onNotify) {
+          onNotify('NFT Scratchers Sent', res.message);
+        }
+        setModalBatchInput('');
+        fetchOverview(false);
+        setTimeout(() => {
+          setSelectedNftForSend(null);
+          setModalSuccess(null);
+        }, 1800);
       }
-      setQuickSendUsername('');
-      fetchOverview(false);
     } catch (err: any) {
-      alert(err.message || 'Failed to send');
+      setModalError(err.message || 'Failed to send NFT');
     } finally {
       setIsSubmitting(false);
     }
@@ -224,25 +290,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleQuickAddUser = (username: string) => {
-    setQuickSendUsername(username);
-    setShowQuickSendModal(true);
-  };
-
-  const filteredUsers = (data?.users || []).filter(
-    (u) =>
-      u.telegramUsername.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.walletAddress.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   const availableInVault = data?.inventory
     ? Math.max(0, data.inventory.totalInVault - data.inventory.allocatedCount - data.inventory.claimedCount)
     : 0;
 
+  // Filter records by Telegram username
+  const filteredAllocations = (data?.allocations || []).filter((alloc) =>
+    alloc.telegramUsername.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredClaims = (data?.claims || []).filter((claim) =>
+    claim.telegramUsername.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   // Admin NFT Scratchers Catalog definitions
   const adminNftTiers = [
     {
-      id: 'grand',
+      id: 'grand' as ScratcherTierType,
       title: 'Series VIII Gold Grand Scratcher',
       maxPrize: '8,000,000 VERSE',
       theme: 'gold',
@@ -255,7 +319,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       accentColor: 'from-amber-500/20 to-yellow-600/10 border-amber-500/40',
     },
     {
-      id: 'mega',
+      id: 'mega' as ScratcherTierType,
       title: 'Series VI Neon Mega Scratcher',
       maxPrize: '1,000,000 VERSE',
       theme: 'neon',
@@ -268,7 +332,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       accentColor: 'from-cyan-500/20 to-blue-600/10 border-cyan-500/40',
     },
     {
-      id: 'lucky',
+      id: 'lucky' as ScratcherTierType,
       title: 'Series IV Cyan Lucky Scratcher',
       maxPrize: '250,000 VERSE',
       theme: 'cyan',
@@ -281,7 +345,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       accentColor: 'from-purple-500/20 to-indigo-600/10 border-purple-500/40',
     },
     {
-      id: 'mini',
+      id: 'mini' as ScratcherTierType,
       title: 'Series II Purple Mini Scratcher',
       maxPrize: '50,000 VERSE',
       theme: 'purple',
@@ -294,6 +358,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       accentColor: 'from-emerald-500/20 to-teal-600/10 border-emerald-500/40',
     },
   ];
+
+  const totalNftsAvailable = (data?.inventory?.totalInVault || 0) + adminOnChainNfts.length;
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-8 px-4 sm:px-6 py-8 text-slate-200">
@@ -312,11 +378,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ADMIN NFT VAULT &amp; DISPATCH
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-[#00E5FF] text-[10px] font-black uppercase tracking-wider border border-cyan-500/30">
-                  Admin Access
+                  Admin Panel
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 font-medium mt-1">
-                Admin view: Send Verse Scratcher NFTs to Telegram usernames, linked to recipient wallet addresses for instant claiming anytime.
+                Dispatch Verse Scratcher NFTs directly to Telegram usernames. Touch any NFT to send one-by-one or in batch.
               </p>
             </div>
           </div>
@@ -333,7 +399,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </button>
 
             <button
-              onClick={() => fetchOverview(true)}
+              onClick={() => {
+                fetchOverview(true);
+                if (account?.address) fetchAdminNfts(account.address);
+              }}
               disabled={isRefreshing}
               className="p-2.5 rounded-2xl bg-[#0E172A] hover:bg-[#14203B] border border-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer"
               title="Refresh Admin Overview"
@@ -382,7 +451,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="font-mono text-base font-black text-[#00E5FF]">
-                  {account?.balanceVerse || '0'}
+                  {formatBalanceDisplay(account?.balanceVerse, 2, '0.00')}
                 </span>
                 <span className="text-[11px] font-bold text-cyan-300">VERSE</span>
               </div>
@@ -394,11 +463,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="p-4 rounded-2xl bg-[#070D1B] border border-purple-500/20 flex items-center justify-between">
             <div>
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
-                Admin POL / MATIC Balance
+                Admin POL (MATIC) Balance
               </span>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span className="font-mono text-base font-black text-purple-300">
-                  {account?.balanceMatic || '0.0000'}
+                  {formatBalanceDisplay(account?.balanceMatic, 4, '0.0000')}
                 </span>
                 <span className="text-[11px] font-bold text-purple-400">POL</span>
               </div>
@@ -426,9 +495,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </button>
           </div>
           <div className="text-3xl font-black text-white tracking-tight">
-            {(data?.inventory.totalInVault || 0).toLocaleString()}
+            {totalNftsAvailable.toLocaleString()}
           </div>
-          <span className="text-[11px] text-slate-400 font-medium">Available in Admin Scratcher Vault</span>
+          <span className="text-[11px] text-slate-400 font-medium">Available to Send</span>
         </div>
 
         {/* Approved & Allocated */}
@@ -445,7 +514,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="text-3xl font-black text-amber-300 tracking-tight">
             {(data?.inventory.allocatedCount || 0).toLocaleString()}
           </div>
-          <span className="text-[11px] text-slate-400 font-medium">Waiting for User to Claim</span>
+          <span className="text-[11px] text-slate-400 font-medium">Waiting for User Claim</span>
         </div>
 
         {/* Successfully Claimed */}
@@ -460,26 +529,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="text-3xl font-black text-emerald-400 tracking-tight">
             {(data?.inventory.claimedCount || 0).toLocaleString()}
           </div>
-          <span className="text-[11px] text-slate-400 font-medium">Delivered to User Wallets</span>
+          <span className="text-[11px] text-slate-400 font-medium">Delivered to Users</span>
         </div>
 
-        {/* Registered Users */}
+        {/* Dispatched Handles */}
         <div className="p-5 rounded-3xl bg-[#080E1C] border border-slate-800 flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-black uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
-              <Users size={14} />
-              LINKED USERNAMES
+              <Send size={14} />
+              DISPATCHED USERNAMES
             </span>
             <span className="text-xs font-bold text-purple-300">Live</span>
           </div>
           <div className="text-3xl font-black text-purple-300 tracking-tight">
-            {(data?.users || []).length}
+            {(data?.allocations || []).length}
           </div>
-          <span className="text-[11px] text-slate-400 font-medium">Telegrams &amp; Polygon Wallets</span>
+          <span className="text-[11px] text-slate-400 font-medium">Dispatched Records</span>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
+      {/* Navigation Tabs (Without user wallet tables) */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
         <button
           onClick={() => setActiveTab('nfts')}
@@ -490,13 +559,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           <Sparkles size={14} />
-          Admin NFT Vault ({(data?.inventory.totalInVault || 0).toLocaleString()})
+          Admin NFTs &amp; Dispatch ({totalNftsAvailable.toLocaleString()})
         </button>
 
         <button
-          onClick={() => setActiveTab('allocate')}
+          onClick={() => setActiveTab('batch')}
           className={`px-4 py-2 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'allocate'
+            activeTab === 'batch'
               ? 'bg-[#00E5FF] text-black shadow-lg shadow-cyan-500/20'
               : 'bg-[#0E172A] text-slate-300 hover:text-white hover:bg-[#14203B]'
           }`}
@@ -506,27 +575,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveTab('users')}
+          onClick={() => setActiveTab('records')}
           className={`px-4 py-2 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'users'
-              ? 'bg-[#00E5FF] text-black shadow-lg shadow-cyan-500/20'
-              : 'bg-[#0E172A] text-slate-300 hover:text-white hover:bg-[#14203B]'
-          }`}
-        >
-          <UserCheck size={14} />
-          Linked Wallets ({(data?.users || []).length})
-        </button>
-
-        <button
-          onClick={() => setActiveTab('allocations')}
-          className={`px-4 py-2 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'allocations'
+            activeTab === 'records'
               ? 'bg-[#00E5FF] text-black shadow-lg shadow-cyan-500/20'
               : 'bg-[#0E172A] text-slate-300 hover:text-white hover:bg-[#14203B]'
           }`}
         >
           <Layers size={14} />
-          Sent Records ({(data?.allocations || []).length})
+          Dispatched Records ({(data?.allocations || []).length})
         </button>
 
         <button
@@ -542,117 +599,149 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: Admin NFT Scratcher Vault (Visual NFT Display) */}
+      {/* TAB 1: Admin NFTs & Interactive Dispatch */}
       {activeTab === 'nfts' && (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-[#080E1C] border border-slate-800">
             <div>
               <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
                 <Sparkles className="text-amber-400 w-5 h-5" />
-                ADMIN VERSE SCRATCHER NFT VAULT
+                ADMIN VERSE SCRATCHER NFT CATALOG
               </h3>
               <p className="text-xs text-slate-400">
-                Official Polygon NFT Scratchers owned by the Admin Vault, ready to be dispatched to usernames and claimed to user wallets.
+                Touch any NFT card below to send it to Telegram usernames one-by-one or in batch.
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => {
-                  setQuickSendUsername('');
-                  setShowQuickSendModal(true);
-                }}
+                onClick={() => setShowReplenishModal(true)}
                 className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase flex items-center gap-1.5 shadow-lg shadow-cyan-500/20 hover:brightness-110 cursor-pointer"
               >
-                <Send size={14} />
-                Send Scratcher NFT
-              </button>
-
-              <button
-                onClick={() => setShowReplenishModal(true)}
-                className="px-3.5 py-2 rounded-xl bg-[#0E172A] border border-slate-700 text-slate-300 hover:text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer"
-              >
                 <PlusCircle size={14} />
-                Mint More
+                + Mint / Deposit NFTs
               </button>
             </div>
           </div>
 
-          {/* NFT Cards Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {adminNftTiers.map((tier) => (
-              <div
-                key={tier.id}
-                className={`p-5 rounded-3xl bg-gradient-to-b ${tier.accentColor} bg-[#080E1C] border flex flex-col justify-between space-y-4 relative overflow-hidden group hover:scale-[1.02] transition-transform`}
+          {/* If No NFTs available in address / vault */}
+          {!account?.address ? (
+            <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
+              <Wallet size={44} className="mx-auto text-cyan-400 opacity-60" />
+              <h4 className="text-lg font-black text-white">Connect Admin Wallet</h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                Connect your Polygon admin wallet to load your real on-chain VERSE balance and Verse Scratcher NFTs.
+              </p>
+              <button
+                onClick={onConnectWallet}
+                className="px-6 py-2.5 rounded-xl bg-[#00E5FF] text-black font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-cyan-500/20"
               >
-                {/* NFT Image Preview */}
-                <div className="relative w-full h-44 rounded-2xl overflow-hidden bg-[#040813] border border-slate-700">
-                  <img
-                    src={tier.image}
-                    alt={tier.title}
-                    referrerPolicy="no-referrer"
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
-
-                  {/* Top Badge */}
-                  <div className="absolute top-3 left-3">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${tier.badgeColor}`}>
-                      {tier.badge}
-                    </span>
-                  </div>
-
-                  {/* Max Prize Overlay */}
-                  <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-300">Max Prize:</span>
-                    <span className="font-mono text-xs font-black text-amber-300 drop-shadow">
-                      {tier.maxPrize}
-                    </span>
-                  </div>
-                </div>
-
-                {/* NFT Details */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-black text-white text-sm tracking-tight truncate">
-                      {tier.title}
-                    </h4>
-                    <tier.icon size={16} className="text-[#00E5FF] shrink-0" />
-                  </div>
-
-                  <div className="flex items-center justify-between text-xs text-slate-400">
-                    <span>Available in Vault:</span>
-                    <span className="font-mono font-black text-white">
-                      {tier.available.toLocaleString()} NFTs
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-slate-400">
-                    <span>Network:</span>
-                    <span className="font-semibold text-purple-300">Polygon Mainnet (137)</span>
-                  </div>
-                </div>
-
-                {/* Send Button */}
-                <button
-                  type="button"
+                Connect Wallet
+              </button>
+            </div>
+          ) : totalNftsAvailable === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
+              <AlertCircle size={44} className="mx-auto text-amber-400" />
+              <h4 className="text-xl font-black text-white uppercase tracking-tight">
+                No NFTs in this wallet address
+              </h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Your connected admin address <span className="font-mono text-cyan-300">{account.address.slice(0, 8)}...{account.address.slice(-6)}</span> currently has 0 Verse Scratcher NFTs. Click below to mint or deposit NFTs into your vault.
+              </p>
+              <button
+                onClick={() => setShowReplenishModal(true)}
+                className="px-6 py-2.5 rounded-xl bg-[#00E5FF] text-black font-black text-xs uppercase tracking-wider cursor-pointer shadow-lg shadow-cyan-500/20"
+              >
+                + Mint / Stock Vault NFTs
+              </button>
+            </div>
+          ) : (
+            /* NFT Cards Grid */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {adminNftTiers.map((tier) => (
+                <div
+                  key={tier.id}
                   onClick={() => {
-                    setQuickSendTier(tier.id as ScratcherTierType);
-                    setShowQuickSendModal(true);
+                    setSelectedNftForSend({
+                      tier: tier.id,
+                      title: tier.title,
+                      image: tier.image,
+                      maxPrize: tier.maxPrize,
+                      available: tier.available,
+                    });
+                    setSingleUsername('');
+                    setSingleAmount(1);
+                    setModalBatchInput('');
+                    setModalError(null);
+                    setModalSuccess(null);
                   }}
-                  className="w-full py-2.5 rounded-xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                  className={`p-5 rounded-3xl bg-gradient-to-b ${tier.accentColor} bg-[#080E1C] border flex flex-col justify-between space-y-4 relative overflow-hidden group hover:scale-[1.02] transition-all cursor-pointer shadow-lg`}
                 >
-                  <Send size={13} />
-                  <span>Send to Username</span>
-                </button>
-              </div>
-            ))}
-          </div>
+                  {/* NFT Image Preview */}
+                  <div className="relative w-full h-44 rounded-2xl overflow-hidden bg-[#040813] border border-slate-700">
+                    <img
+                      src={tier.image}
+                      alt={tier.title}
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
+
+                    {/* Top Badge */}
+                    <div className="absolute top-3 left-3">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${tier.badgeColor}`}>
+                        {tier.badge}
+                      </span>
+                    </div>
+
+                    {/* Max Prize Overlay */}
+                    <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-300">Max Prize:</span>
+                      <span className="font-mono text-xs font-black text-amber-300 drop-shadow">
+                        {tier.maxPrize}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* NFT Details */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-black text-white text-sm tracking-tight truncate">
+                        {tier.title}
+                      </h4>
+                      <tier.icon size={16} className="text-[#00E5FF] shrink-0" />
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-slate-400">
+                      <span>Available in Vault:</span>
+                      <span className="font-mono font-black text-white">
+                        {tier.available.toLocaleString()} NFTs
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Network:</span>
+                      <span className="font-semibold text-purple-300">Polygon Mainnet (137)</span>
+                    </div>
+                  </div>
+
+                  {/* Touch to Send Action Button */}
+                  <button
+                    type="button"
+                    className="w-full py-2.5 rounded-xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
+                  >
+                    <Send size={13} />
+                    <span>Touch &amp; Send to User</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* TAB 2: Batch Send to Telegrams */}
-      {activeTab === 'allocate' && (
+      {activeTab === 'batch' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main Input Form */}
           <div className="lg:col-span-2 p-6 rounded-3xl bg-[#080E1C] border border-slate-800 space-y-5">
@@ -660,7 +749,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <div className="flex items-center gap-2">
                 <Send className="text-[#00E5FF] w-5 h-5" />
                 <h3 className="text-lg font-black text-white tracking-tight">
-                  SEND NFTS TO TELEGRAM USERNAMES
+                  BATCH SEND NFTS TO TELEGRAM USERNAMES
                 </h3>
               </div>
               <span className="text-xs text-slate-400 font-bold">
@@ -669,7 +758,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <p className="text-xs text-slate-400">
-              Paste recipient Telegram usernames and quantities. When you submit, the NFT scratchers are deducted from the Admin Vault and associated with the username and their Polygon wallet address so they can claim it anytime on the Home Page.
+              Paste recipient Telegram usernames and quantities. When you send, the scratchers become immediately ready for the users to claim on the Home Page.
             </p>
 
             <form onSubmit={handleBatchAllocate} className="space-y-4">
@@ -699,101 +788,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                         <span className="text-xs font-extrabold text-white">{t.title}</span>
                         <t.icon size={14} className={selectedTier === t.id ? 'text-[#00E5FF]' : 'text-slate-400'} />
                       </div>
-                      <span className="text-[10px] text-slate-400 font-medium block">Up to {t.max}</span>
+                      <span className="text-[10px] text-amber-300 font-mono block truncate">{t.max}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* Textarea for Multi-line input */}
+              {/* Textarea Input */}
               <div>
                 <label className="block text-xs font-black uppercase text-slate-300 mb-2 flex items-center justify-between">
-                  <span>Telegram Usernames &amp; Quantities (one per line)</span>
-                  <span className="text-[11px] text-slate-400 lowercase font-normal">
-                    {parsedItems.length} recipients · {parsedTotalCount} total NFTs
-                  </span>
+                  <span>Telegram Handles &amp; Quantities</span>
+                  <span className="text-[11px] text-slate-500 font-normal">Format: @username count</span>
                 </label>
                 <textarea
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
                   rows={6}
-                  placeholder={`@username 5\n@telegram_handle 10`}
+                  placeholder={`@username 5\n@telegram_handle 10\n@crypto_fan 3`}
                   className="w-full p-4 rounded-2xl bg-[#040813] border border-slate-800 focus:border-[#00E5FF] focus:outline-none font-mono text-sm text-cyan-200 placeholder-slate-600 transition-colors"
                 />
               </div>
 
-              {/* Status alerts */}
-              {allocationSuccessMsg && (
-                <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 flex items-center gap-3 text-emerald-300 text-xs">
-                  <CheckCircle2 size={16} className="shrink-0 text-emerald-400" />
-                  <span>{allocationSuccessMsg}</span>
-                </div>
-              )}
-
               {allocationErrorMsg && (
-                <div className="p-4 rounded-2xl bg-red-950/40 border border-red-500/40 flex items-center gap-3 text-red-300 text-xs">
-                  <AlertCircle size={16} className="shrink-0 text-red-400" />
+                <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                  <AlertCircle size={15} />
                   <span>{allocationErrorMsg}</span>
                 </div>
               )}
 
-              {/* Submit Button */}
+              {allocationSuccessMsg && (
+                <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 size={15} />
+                  <span>{allocationSuccessMsg}</span>
+                </div>
+              )}
+
               <button
-                id="approve-and-allocate-btn"
                 type="submit"
                 disabled={isSubmitting || parsedItems.length === 0}
-                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-[#00E5FF] via-cyan-400 to-[#0099FF] text-black font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-cyan-500/20 hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
+                className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#00E5FF] via-[#00cce6] to-[#0099FF] text-black font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-xl shadow-cyan-500/20 hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw size={16} className="animate-spin" />
-                    <span>Sending NFTs to Usernames &amp; Wallets...</span>
+                    <span>Dispatching NFTs to Telegrams...</span>
                   </>
                 ) : (
                   <>
                     <Send size={18} />
-                    <span>Send {parsedTotalCount} Scratcher NFTs ({parsedItems.length} Users)</span>
+                    <span>
+                      Dispatch {parsedTotalCount > 0 ? `${parsedTotalCount} Scratchers` : 'Scratchers'} to {parsedItems.length} Username{parsedItems.length > 1 ? 's' : ''}
+                    </span>
                   </>
                 )}
               </button>
             </form>
           </div>
 
-          {/* Live Preview Side Box */}
-          <div className="p-6 rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4 flex flex-col justify-between">
-            <div className="space-y-3">
-              <h4 className="text-sm font-black uppercase tracking-wider text-slate-300 flex items-center gap-2">
-                <Sparkles size={16} className="text-amber-300" />
-                DISPATCH PREVIEW
+          {/* Live Batch Preview Sidebar */}
+          <div className="p-6 rounded-3xl bg-[#080E1C] border border-slate-800 flex flex-col justify-between space-y-4">
+            <div className="space-y-4">
+              <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Batch Live Preview</span>
+                <span className="text-[#00E5FF]">{parsedItems.length} Recipient(s)</span>
               </h4>
 
-              <div className="p-4 rounded-2xl bg-[#040813] border border-slate-800/80 space-y-2 text-xs">
-                <div className="flex justify-between text-slate-400">
-                  <span>Selected Tier:</span>
-                  <span className="font-bold text-white uppercase">{selectedTier}</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Total Recipients:</span>
-                  <span className="font-bold text-cyan-300">{parsedItems.length} users</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>NFTs to Deduct from Vault:</span>
-                  <span className="font-bold text-amber-300">{parsedTotalCount} NFTs</span>
-                </div>
-                <div className="flex justify-between text-slate-400">
-                  <span>Claim Availability:</span>
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 text-[10px] font-black">
-                    INSTANT CLAIM ON HOME
-                  </span>
-                </div>
-              </div>
-
-              {/* Parsed List Preview */}
-              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                <span className="text-[11px] font-bold text-slate-400 uppercase">Recipients:</span>
+              <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
                 {parsedItems.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-500 bg-[#0C1426] rounded-2xl">
-                    Type or paste usernames to preview dispatch list
+                  <div className="text-center py-10 text-xs text-slate-500">
+                    Enter usernames on the left to see instant parsing breakdown.
                   </div>
                 ) : (
                   parsedItems.map((item, idx) => (
@@ -818,17 +881,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* TAB 3: Registered Users Directory */}
-      {activeTab === 'users' && (
+      {/* TAB 3: Dispatched Records (NO user wallet addresses) */}
+      {activeTab === 'records' && (
         <div className="p-6 rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                <Users className="text-[#00E5FF] w-5 h-5" />
-                LINKED TELEGRAM USERNAMES &amp; WALLETS
+                <Layers className="text-[#00E5FF] w-5 h-5" />
+                NFT SCRATCHER DISPATCH RECORDS
               </h3>
               <p className="text-xs text-slate-400">
-                User directory in the Admin database matching Telegram usernames to connected Polygon wallet addresses
+                Audit trail of scratcher NFTs dispatched to Telegram usernames
               </p>
             </div>
 
@@ -837,123 +900,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 type="text"
-                placeholder="Search Telegram or 0x..."
+                placeholder="Search Telegram handle..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 rounded-2xl bg-[#040813] border border-slate-800 focus:border-[#00E5FF] focus:outline-none text-xs text-slate-200"
+                className="w-full pl-10 pr-4 py-2 rounded-2xl bg-[#040813] border border-slate-800 focus:border-[#00E5FF] focus:outline-none text-xs text-slate-200 font-mono"
               />
             </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[11px]">
-                  <th className="py-3 px-4">Telegram Username</th>
-                  <th className="py-3 px-4">Connected Polygon Wallet</th>
-                  <th className="py-3 px-4 text-center">Allocated</th>
-                  <th className="py-3 px-4 text-center">Claimed</th>
-                  <th className="py-3 px-4 text-center">Pending</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800/60 font-medium">
-                {filteredUsers.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="py-8 text-center text-slate-500">
-                      No linked users found yet. When users connect on the Home Page, their Telegram and wallet appear here automatically.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-[#0C1426]/50 transition-colors">
-                      <td className="py-3.5 px-4">
-                        <span className="font-mono font-bold text-cyan-300 text-sm">
-                          {user.telegramUsername}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {user.walletAddress ? (
-                          <div className="flex items-center gap-1.5 font-mono text-slate-300">
-                            <span>{user.walletAddress.slice(0, 8)}...{user.walletAddress.slice(-6)}</span>
-                            <button
-                              onClick={() => handleCopy(user.walletAddress)}
-                              className="p-1 hover:text-[#00E5FF] cursor-pointer"
-                              title="Copy Address"
-                            >
-                              {copiedText === user.walletAddress ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
-                            </button>
-                            <a
-                              href={`https://polygonscan.com/address/${user.walletAddress}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1 hover:text-[#00E5FF]"
-                            >
-                              <ExternalLink size={12} />
-                            </a>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 italic">Not connected yet</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-white">
-                        {user.totalAllocated}
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-emerald-400">
-                        {user.totalClaimed}
-                      </td>
-                      <td className="py-3.5 px-4 text-center font-bold text-amber-300">
-                        {user.pendingClaim}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        {user.pendingClaim > 0 ? (
-                          <span className="px-2.5 py-0.5 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-[10px] font-black">
-                            APPROVED ({user.pendingClaim})
-                          </span>
-                        ) : user.totalClaimed > 0 ? (
-                          <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/30 text-emerald-300 text-[10px] font-black">
-                            CLAIMED ALL
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-medium">
-                            READY
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => handleQuickAddUser(user.telegramUsername)}
-                          className="px-3 py-1 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-[#00E5FF] font-bold text-xs border border-cyan-500/30 transition-all cursor-pointer"
-                        >
-                          + Send NFT
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 4: Allocations List */}
-      {activeTab === 'allocations' && (
-        <div className="p-6 rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
-                <Layers className="text-[#00E5FF] w-5 h-5" />
-                NFT SCRATCHER DISPATCH RECORDS
-              </h3>
-              <p className="text-xs text-slate-400">
-                Audit trail of all scratcher NFTs sent to usernames and wallet destinations
-              </p>
-            </div>
-            <span className="text-xs text-slate-400 font-bold">
-              Total Records: {data?.allocations.length || 0}
-            </span>
           </div>
 
           <div className="overflow-x-auto">
@@ -966,18 +918,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <th className="py-3 px-4 text-center">Amount</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4">Sent Date</th>
-                  <th className="py-3 px-4">Claimed Date</th>
+                  <th className="py-3 px-4">Claim Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
-                {(data?.allocations || []).length === 0 ? (
+                {filteredAllocations.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-8 text-center text-slate-500">
                       No scratcher NFTs dispatched yet.
                     </td>
                   </tr>
                 ) : (
-                  data?.allocations.map((alloc) => (
+                  filteredAllocations.map((alloc) => (
                     <tr key={alloc.id} className="hover:bg-[#0C1426]/50 transition-colors">
                       <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px]">
                         {alloc.id}
@@ -1017,17 +969,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* TAB 5: User Claim Logs */}
+      {/* TAB 4: Claims Audit Log (NO user wallet addresses) */}
       {activeTab === 'claims' && (
         <div className="p-6 rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
                 <CheckCircle2 className="text-emerald-400 w-5 h-5" />
-                USER CLAIM AUDIT LOG
+                CLAIM RECEIPT AUDIT LOGS
               </h3>
               <p className="text-xs text-slate-400">
-                Verification receipts of users claiming their allocated NFT scratchers to their wallet
+                Verified logs when users claim scratchers sent to their Telegram usernames
               </p>
             </div>
             <span className="text-xs text-slate-400 font-bold">
@@ -1040,31 +992,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 font-bold uppercase text-[11px]">
                   <th className="py-3 px-4">Claim ID</th>
-                  <th className="py-3 px-4">Telegram Username</th>
-                  <th className="py-3 px-4">Recipient Wallet</th>
+                  <th className="py-3 px-4">Recipient Telegram</th>
                   <th className="py-3 px-4 text-center">Amount Claimed</th>
-                  <th className="py-3 px-4">Claim Tx Hash</th>
-                  <th className="py-3 px-4">Timestamp</th>
+                  <th className="py-3 px-4">Transaction Hash</th>
+                  <th className="py-3 px-4">Claim Timestamp</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60 font-medium">
-                {(data?.claims || []).length === 0 ? (
+                {filteredClaims.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-500">
-                      No claims recorded yet. Receipts will appear here when users claim their scratchers.
+                    <td colSpan={5} className="py-8 text-center text-slate-500">
+                      No claims recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  data?.claims.map((claim) => (
+                  filteredClaims.map((claim) => (
                     <tr key={claim.id} className="hover:bg-[#0C1426]/50 transition-colors">
                       <td className="py-3.5 px-4 font-mono text-slate-400 text-[11px]">
                         {claim.id}
                       </td>
                       <td className="py-3.5 px-4 font-mono font-bold text-cyan-300">
                         {claim.telegramUsername}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-300">
-                        {claim.walletAddress.slice(0, 8)}...{claim.walletAddress.slice(-6)}
                       </td>
                       <td className="py-3.5 px-4 text-center font-black text-emerald-400">
                         +{claim.amount} Scratchers
@@ -1084,88 +1032,142 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* Quick Send Single User Modal */}
-      {showQuickSendModal && (
+      {/* TOUCH NFT SEND MODAL (One-by-One or Batch) */}
+      {selectedNftForSend && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-md p-6 rounded-3xl bg-[#091122] border border-cyan-500/30 space-y-5 shadow-2xl">
+          <div className="w-full max-w-lg p-6 sm:p-7 rounded-3xl bg-[#091122] border border-cyan-500/40 space-y-5 shadow-2xl relative">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Send className="text-[#00E5FF]" />
-                <h3 className="text-lg font-black text-white">SEND SCRATCHER NFT</h3>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#040813] border border-cyan-500/40 shrink-0">
+                  <img
+                    src={selectedNftForSend.image}
+                    alt={selectedNftForSend.title}
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-white">{selectedNftForSend.title}</h3>
+                  <span className="text-xs text-amber-300 font-mono font-bold">
+                    Max Prize: {selectedNftForSend.maxPrize}
+                  </span>
+                </div>
               </div>
               <button
-                onClick={() => setShowQuickSendModal(false)}
-                className="text-slate-400 hover:text-white text-sm font-bold cursor-pointer"
+                onClick={() => setSelectedNftForSend(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold cursor-pointer p-1"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-slate-400">
-              Send Verse Scratcher NFTs from your Admin Vault to a Telegram username. The scratchers will be instantly ready for them to claim to their wallet on the Home Page.
-            </p>
+            {/* Switch between Single and Batch Mode */}
+            <div className="grid grid-cols-2 gap-2 p-1 rounded-2xl bg-[#040813] border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setSendMode('single')}
+                className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  sendMode === 'single'
+                    ? 'bg-[#00E5FF] text-black shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Send One by One
+              </button>
+              <button
+                type="button"
+                onClick={() => setSendMode('batch')}
+                className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  sendMode === 'batch'
+                    ? 'bg-[#00E5FF] text-black shadow-md'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Send in Batch
+              </button>
+            </div>
 
-            <form onSubmit={handleQuickSend} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                  Telegram Username
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="@recipient_username"
-                  value={quickSendUsername}
-                  onChange={(e) => setQuickSendUsername(e.target.value)}
-                  className="w-full p-3 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white font-mono focus:border-[#00E5FF] focus:outline-none"
-                />
-              </div>
+            <form onSubmit={handleModalSend} className="space-y-4">
+              {sendMode === 'single' ? (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                      Recipient Telegram Username
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="@username"
+                      value={singleUsername}
+                      onChange={(e) => setSingleUsername(e.target.value)}
+                      className="w-full p-3.5 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white font-mono focus:border-[#00E5FF] focus:outline-none"
+                    />
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                      Number of Scratchers to Send
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      required
+                      value={singleAmount}
+                      onChange={(e) => setSingleAmount(parseInt(e.target.value, 10) || 1)}
+                      className="w-full p-3.5 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white font-mono focus:border-[#00E5FF] focus:outline-none"
+                    />
+                  </div>
+                </>
+              ) : (
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    NFT Tier
+                  <label className="block text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
+                    <span>Telegram Handles &amp; Quantities</span>
+                    <span className="text-[11px] text-slate-500">Format: @username count</span>
                   </label>
-                  <select
-                    value={quickSendTier}
-                    onChange={(e) => setQuickSendTier(e.target.value as ScratcherTierType)}
-                    className="w-full p-3 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white focus:border-[#00E5FF] focus:outline-none"
-                  >
-                    <option value="grand">Grand 8M VERSE</option>
-                    <option value="mega">Mega 1M VERSE</option>
-                    <option value="lucky">Lucky 250k VERSE</option>
-                    <option value="mini">Mini 50k VERSE</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={quickSendAmount}
-                    onChange={(e) => setQuickSendAmount(parseInt(e.target.value, 10) || 1)}
-                    className="w-full p-3 rounded-xl bg-[#040813] border border-slate-800 text-xs text-white font-mono focus:border-[#00E5FF] focus:outline-none"
+                  <textarea
+                    rows={4}
+                    required
+                    placeholder={`@user1 5\n@user2 10\n@user3 2`}
+                    value={modalBatchInput}
+                    onChange={(e) => setModalBatchInput(e.target.value)}
+                    className="w-full p-3.5 rounded-xl bg-[#040813] border border-slate-800 text-xs text-cyan-200 font-mono focus:border-[#00E5FF] focus:outline-none"
                   />
                 </div>
-              </div>
+              )}
+
+              {modalError && (
+                <div className="p-3 rounded-xl bg-red-950/60 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                  <AlertCircle size={15} />
+                  <span>{modalError}</span>
+                </div>
+              )}
+
+              {modalSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 size={15} />
+                  <span>{modalSuccess}</span>
+                </div>
+              )}
 
               <button
                 type="submit"
-                disabled={isSubmitting || !quickSendUsername}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 disabled:opacity-50 cursor-pointer"
+                disabled={isSubmitting}
+                className="w-full py-3.5 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 hover:brightness-110 disabled:opacity-50 cursor-pointer shadow-lg shadow-cyan-500/20"
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
-                    <span>Sending NFT...</span>
+                    <span>Sending...</span>
                   </>
                 ) : (
                   <>
-                    <Send size={16} />
-                    <span>Send {quickSendAmount} NFT(s) to {quickSendUsername || 'Recipient'}</span>
+                    <Send size={15} />
+                    <span>
+                      {sendMode === 'single'
+                        ? `Send ${singleAmount} NFT(s) to ${singleUsername || 'Recipient'}`
+                        : 'Dispatch Batch to Usernames'}
+                    </span>
                   </>
                 )}
               </button>
@@ -1192,7 +1194,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             <p className="text-xs text-slate-400">
-              Mint additional Verse Scratcher NFTs to your Admin Vault inventory.
+              Mint Verse Scratcher NFTs to your Admin Vault inventory to send to users.
             </p>
 
             <div className="space-y-4">
