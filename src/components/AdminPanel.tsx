@@ -37,7 +37,11 @@ import {
   fetchRealScratchersForAddress,
   fetchRealBalances,
   formatBalanceDisplay,
-  connectViaWalletConnect,
+  connectDirectWeb3Wallet,
+  savePersistedWallet,
+  getPersistedWallet,
+  clearPersistedWallet,
+  disconnectWallet,
 } from '../services/walletService';
 import { VerseCoinLogo, PolygonBadge } from './VerseBrand';
 import { WalletConnectModal } from './WalletConnectModal';
@@ -140,6 +144,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Auto-restore admin connected wallet on page load / refresh
+  useEffect(() => {
+    const persistedAdmin = getPersistedWallet('admin');
+    if (persistedAdmin && persistedAdmin.address) {
+      setAdminAccount(persistedAdmin);
+      setAdminWalletApi(persistedAdmin.address).catch(console.error);
+      fetchAdminWalletData(persistedAdmin.address);
+    }
+  }, []);
+
   useEffect(() => {
     fetchOverview();
     const interval = setInterval(() => fetchOverview(false), 8000);
@@ -158,15 +172,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   }, [adminAccount?.address]);
 
-  // Connect Admin Wallet Handler - opens Web3 Wallet Selection Modal (MetaMask, WalletConnect, Coinbase, Address)
-  const handleConnectAdminWallet = () => {
+  // Connect Admin Wallet Handler - directly launches Web3 wallet pop-up
+  const handleConnectAdminWallet = async () => {
     setAdminConnectError(null);
-    setIsAdminWalletModalOpen(true);
+    try {
+      const res = await connectDirectWeb3Wallet();
+      if (res.success && res.account) {
+        await handleConnectAdminSuccess(res.account);
+      } else {
+        if (res.error && !res.error.toLowerCase().includes('user rejected') && !res.error.toLowerCase().includes('closed')) {
+          setIsAdminWalletModalOpen(true);
+        }
+      }
+    } catch (err) {
+      setIsAdminWalletModalOpen(true);
+    }
   };
 
   // Called when admin successfully selects and connects their Web3 wallet
   const handleConnectAdminSuccess = async (connectedAccount: WalletAccount) => {
     setAdminAccount(connectedAccount);
+    savePersistedWallet('admin', connectedAccount);
     setIsAdminWalletModalOpen(false);
     setAdminConnectError(null);
     try {
@@ -183,7 +209,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const handleDisconnectAdminWallet = () => {
+  const handleDisconnectAdminWallet = async () => {
+    await disconnectWallet('admin');
+    clearPersistedWallet('admin');
     setAdminAccount(null);
     setAdminOnChainNfts([]);
     if (onNotify) {
@@ -503,18 +531,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
 
             {adminAccount?.address ? (
-              <button
-                onClick={handleDisconnectAdminWallet}
-                title="Disconnect Admin Wallet"
-                className="p-2 rounded-xl bg-slate-800/80 hover:bg-red-950/60 hover:text-red-300 text-slate-400 border border-slate-700 hover:border-red-500/40 text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
-              >
-                <LogOut size={13} />
-                <span className="text-[11px]">Disconnect</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleConnectAdminWallet}
+                  title="Switch to another Web3 wallet"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 text-[11px] font-bold transition-all cursor-pointer hover:text-white"
+                >
+                  Switch
+                </button>
+                <button
+                  onClick={handleDisconnectAdminWallet}
+                  title="Disconnect Admin Wallet"
+                  className="px-2.5 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-red-300 hover:text-red-100 border border-red-500/30 text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                >
+                  <LogOut size={12} />
+                  <span>Disconnect</span>
+                </button>
+              </div>
             ) : (
               <button
                 onClick={handleConnectAdminWallet}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/20"
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] hover:brightness-110 text-black font-black text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-lg shadow-cyan-500/20 hover:scale-[1.02] active:scale-95 transition-all"
               >
                 <Wallet size={13} />
                 <span>Connect Wallet</span>

@@ -15,6 +15,7 @@ import {
   Trophy,
   Zap,
   Edit2,
+  LogOut,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import {
@@ -45,6 +46,7 @@ interface HomePageProps {
   status: ConnectionStatus;
   account: WalletAccount | null;
   onConnectClick: () => void;
+  onDisconnectClick?: () => void;
   onSwitchToConnectView: () => void;
   onSwitchToAdminView: () => void;
   onUpdateAccountBalance?: (
@@ -102,6 +104,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   status,
   account,
   onConnectClick,
+  onDisconnectClick,
   onSwitchToAdminView,
   onUpdateAccountBalance,
   onNotify,
@@ -425,18 +428,33 @@ export const HomePage: React.FC<HomePageProps> = ({
             <button
               id="home-connect-wallet-btn"
               onClick={onConnectClick}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20 hover:brightness-110 transition-all cursor-pointer flex items-center gap-1.5"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20 hover:brightness-110 transition-all cursor-pointer flex items-center gap-1.5 hover:scale-[1.02] active:scale-95"
             >
               <Wallet size={14} />
               <span>Connect Wallet</span>
             </button>
           ) : (
-            <button
-              onClick={onConnectClick}
-              className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 transition-all cursor-pointer"
-            >
-              Switch Wallet
-            </button>
+            <>
+              <button
+                id="home-switch-wallet-btn"
+                onClick={onConnectClick}
+                className="px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 transition-all cursor-pointer hover:text-white"
+                title="Switch or reconnect to another Web3 wallet"
+              >
+                Switch Wallet
+              </button>
+              {onDisconnectClick && (
+                <button
+                  id="home-disconnect-wallet-btn"
+                  onClick={onDisconnectClick}
+                  className="px-3 py-1.5 rounded-xl bg-red-950/40 hover:bg-red-900/60 text-xs font-bold text-red-300 hover:text-red-100 border border-red-500/30 transition-all cursor-pointer flex items-center gap-1"
+                  title="Disconnect wallet"
+                >
+                  <LogOut size={12} />
+                  <span>Disconnect</span>
+                </button>
+              )}
+            </>
           )}
 
           <button

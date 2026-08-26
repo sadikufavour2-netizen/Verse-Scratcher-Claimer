@@ -5,7 +5,14 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { ConnectionStatus, WalletAccount, POLYGON_MAINNET, UserProfileResponse } from './types';
-import { switchToPolygon, disconnectWallet } from './services/walletService';
+import {
+  switchToPolygon,
+  disconnectWallet,
+  savePersistedWallet,
+  getPersistedWallet,
+  connectDirectWeb3Wallet,
+  fetchRealBalances,
+} from './services/walletService';
 import { getUserProfileApi } from './services/apiService';
 import { WalletErrorBoundary } from './components/WalletErrorBoundary';
 import { Navbar } from './components/Navbar';
@@ -32,10 +39,54 @@ export default function App() {
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
   const [pendingApprovedCount, setPendingApprovedCount] = useState<number>(0);
 
-  // Triggered after click on "CONNECT WALLET" in the page
-  const handleOpenConnect = () => {
-    setIsModalOpen(true);
+  // Auto-restore connected wallet session on page load / refresh
+  useEffect(() => {
+    const persisted = getPersistedWallet('user');
+    if (persisted && persisted.address) {
+      setAccount(persisted);
+      setConnectionStatus('CONNECTED');
+
+      // Query live Polygon balances in background
+      fetchRealBalances(persisted.address)
+        .then((balances) => {
+          setAccount((prev) => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              balanceMatic: balances.balanceMatic,
+              balanceVerse: balances.balanceVerse,
+              balanceMaticRaw: balances.balanceMaticRaw,
+              balanceVerseRaw: balances.balanceVerseRaw,
+              balanceMaticError: balances.balanceMaticError,
+              balanceVerseError: balances.balanceVerseError,
+              balanceVerseEthereum: balances.balanceVerseEthereum,
+              balanceVerseNetworkNote: balances.balanceVerseNetworkNote,
+            };
+          });
+        })
+        .catch((err) => {
+          console.warn('Auto-restore balance query error:', err);
+        });
+    }
+  }, []);
+
+  // Triggered when clicking "CONNECT WALLET" in the page - directly launches Web3 wallet pop-up
+  const handleOpenConnect = async () => {
     setErrorMessage(null);
+    try {
+      // Directly triggers the browser Web3 wallet extension (MetaMask/Rabby/Coinbase) or WalletConnect modal
+      const res = await connectDirectWeb3Wallet();
+      if (res.success && res.account) {
+        handleConnectSuccess(res.account);
+      } else {
+        // If an issue or provider needs explicit selection, open the modal
+        if (res.error && !res.error.toLowerCase().includes('user rejected') && !res.error.toLowerCase().includes('closed')) {
+          setIsModalOpen(true);
+        }
+      }
+    } catch (e) {
+      setIsModalOpen(true);
+    }
   };
 
   // Toast notification dispatcher
@@ -87,6 +138,7 @@ export default function App() {
   // Called when wallet connects successfully
   const handleConnectSuccess = (connectedAccount: WalletAccount) => {
     setAccount(connectedAccount);
+    savePersistedWallet('user', connectedAccount);
     setIsModalOpen(false);
 
     // Verify Polygon Mainnet (Chain ID 137)
@@ -164,7 +216,7 @@ export default function App() {
 
   // Disconnect handler
   const handleDisconnect = async () => {
-    await disconnectWallet();
+    await disconnectWallet('user');
     setAccount(null);
     setConnectionStatus('DISCONNECTED');
     setErrorMessage(null);
@@ -205,6 +257,7 @@ export default function App() {
               status={connectionStatus}
               account={account}
               onConnectClick={handleOpenConnect}
+              onDisconnectClick={handleDisconnect}
               onSwitchToConnectView={() => {}}
               onSwitchToAdminView={handleAdminClick}
               onUpdateAccountBalance={handleUpdateAccountBalance}

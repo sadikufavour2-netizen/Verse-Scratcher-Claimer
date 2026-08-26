@@ -1216,9 +1216,9 @@ export async function switchToPolygon(currentAccount: WalletAccount): Promise<{ 
 }
 
 /**
- * Disconnects the current wallet.
+ * Disconnects the current wallet and removes cached state.
  */
-export async function disconnectWallet(): Promise<void> {
+export async function disconnectWallet(type?: 'user' | 'admin'): Promise<void> {
   try {
     if (cachedProvider && typeof cachedProvider.disconnect === 'function') {
       await cachedProvider.disconnect();
@@ -1228,7 +1228,76 @@ export async function disconnectWallet(): Promise<void> {
   } finally {
     cachedProvider = null;
     cachedAccount = null;
+    if (type) {
+      clearPersistedWallet(type);
+    }
   }
+}
+
+export const USER_WALLET_STORAGE_KEY = 'verse_connected_user_wallet';
+export const ADMIN_WALLET_STORAGE_KEY = 'verse_connected_admin_wallet';
+
+export function savePersistedWallet(type: 'user' | 'admin', account: WalletAccount): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const key = type === 'user' ? USER_WALLET_STORAGE_KEY : ADMIN_WALLET_STORAGE_KEY;
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        address: account.address,
+        chainId: account.chainId || 137,
+        walletType: account.walletType || 'injected',
+        walletName: account.walletName || 'Web3 Wallet',
+      })
+    );
+  } catch (e) {
+    console.warn('Failed to persist wallet to storage:', e);
+  }
+}
+
+export function getPersistedWallet(type: 'user' | 'admin'): WalletAccount | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const key = type === 'user' ? USER_WALLET_STORAGE_KEY : ADMIN_WALLET_STORAGE_KEY;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.address && parsed.address.startsWith('0x')) {
+      return {
+        address: parsed.address,
+        chainId: parsed.chainId || 137,
+        walletType: parsed.walletType || 'injected',
+        walletName: parsed.walletName || 'Web3 Wallet',
+        balanceMatic: 'Loading...',
+        balanceVerse: 'Loading...',
+        balanceMaticRaw: 0n,
+        balanceVerseRaw: 0n,
+      };
+    }
+  } catch (e) {}
+  return null;
+}
+
+export function clearPersistedWallet(type: 'user' | 'admin'): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const key = type === 'user' ? USER_WALLET_STORAGE_KEY : ADMIN_WALLET_STORAGE_KEY;
+    localStorage.removeItem(key);
+  } catch (e) {}
+}
+
+/**
+ * Direct 1-Click Web3 Wallet Connection:
+ * 1. If a browser Web3 wallet (MetaMask, Rabby, Coinbase, Brave, Trust) is available in window.ethereum:
+ *    Directly triggers `eth_requestAccounts` which pops up the Web3 wallet extension immediately on screen!
+ * 2. If no browser extension is detected (e.g. standard mobile browser):
+ *    Directly launches WalletConnect modal with QR code & mobile Web3 wallet deep-links.
+ */
+export async function connectDirectWeb3Wallet(targetWalletName?: string): Promise<ConnectResult> {
+  if (isInjectedWalletAvailable()) {
+    return await connectInjectedWallet(targetWalletName);
+  }
+  return await connectViaWalletConnect();
 }
 
 /**
