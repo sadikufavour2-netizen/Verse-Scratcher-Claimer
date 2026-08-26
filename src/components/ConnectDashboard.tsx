@@ -67,7 +67,7 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
     e.preventDefault();
     let cleaned = telegramInput.trim();
     if (!cleaned) {
-      setErrorMsg('Please enter your Telegram username (e.g. @zionoluchi)');
+      setErrorMsg('Please enter your Telegram username (e.g. @yourusername)');
       return;
     }
     if (!cleaned.startsWith('@')) {
@@ -177,7 +177,7 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
 
               <h3 className="text-lg font-black text-white">Connect Telegram Username</h3>
               <p className="text-xs text-slate-400 leading-relaxed">
-                Enter your Telegram handle (e.g. <span className="text-cyan-300 font-mono">@zionoluchi</span>) to match scratchers approved by the admin.
+                Enter your Telegram handle (e.g. <span className="text-cyan-300 font-mono">@yourusername</span>) to match scratchers approved by the admin.
               </p>
             </div>
 

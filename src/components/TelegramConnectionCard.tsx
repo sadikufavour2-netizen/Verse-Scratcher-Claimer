@@ -80,7 +80,7 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
     e.preventDefault();
     let cleaned = telegramInput.trim();
     if (!cleaned) {
-      setErrorMsg('Please enter your Telegram username (e.g., @zionoluchi)');
+      setErrorMsg('Please enter your Telegram username (e.g., @yourusername)');
       return;
     }
     if (!cleaned.startsWith('@')) {

@@ -86,100 +86,23 @@ interface DatabaseState {
 const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "store.json");
 
-// Initial mock-seeded vault inventory with plenty of Verse Scratchers for admin
+// Initial clean state with zero fake data
 const INITIAL_STATE: DatabaseState = {
-  adminWallet: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+  adminWallet: null,
   vaultInventory: {
-    totalInVault: 10000,
-    allocatedCount: 38,
-    claimedCount: 12,
+    totalInVault: 0,
+    allocatedCount: 0,
+    claimedCount: 0,
     tiers: {
-      grand: 2500, // 8,000,000 Max VERSE
-      mega: 2500,  // 1,000,000 Max VERSE
-      lucky: 2500, // 250,000 Max VERSE
-      mini: 2500,  // 50,000 Max VERSE
+      grand: 0,
+      mega: 0,
+      lucky: 0,
+      mini: 0,
     },
   },
-  users: {
-    "@zionoluchi": {
-      id: "usr_1",
-      telegramUsername: "@zionoluchi",
-      walletAddress: "0x71c...b29f",
-      registeredAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      lastActiveAt: new Date().toISOString(),
-      totalAllocated: 15,
-      totalClaimed: 5,
-      pendingClaim: 10,
-    },
-    "@verse_whale": {
-      id: "usr_2",
-      telegramUsername: "@verse_whale",
-      walletAddress: "0x94f...44a1",
-      registeredAt: new Date(Date.now() - 86400000 * 3).toISOString(),
-      lastActiveAt: new Date(Date.now() - 3600000).toISOString(),
-      totalAllocated: 20,
-      totalClaimed: 7,
-      pendingClaim: 13,
-    },
-    "@polygon_master": {
-      id: "usr_3",
-      telegramUsername: "@polygon_master",
-      walletAddress: "0x12b...99e2",
-      registeredAt: new Date(Date.now() - 86400000).toISOString(),
-      lastActiveAt: new Date().toISOString(),
-      totalAllocated: 3,
-      totalClaimed: 0,
-      pendingClaim: 3,
-    },
-  },
-  allocations: [
-    {
-      id: "alloc_101",
-      telegramUsername: "@zionoluchi",
-      walletAddress: "0x71c...b29f",
-      amount: 10,
-      tier: "grand",
-      status: "APPROVED",
-      approvedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      claimedAt: null,
-      allocatedByAdminWallet: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-      ticketIds: [],
-    },
-    {
-      id: "alloc_102",
-      telegramUsername: "@verse_whale",
-      walletAddress: "0x94f...44a1",
-      amount: 13,
-      tier: "mega",
-      status: "APPROVED",
-      approvedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-      claimedAt: null,
-      allocatedByAdminWallet: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-      ticketIds: [],
-    },
-  ],
-  claims: [
-    {
-      id: "claim_01",
-      allocationId: "alloc_old_1",
-      telegramUsername: "@zionoluchi",
-      walletAddress: "0x71c...b29f",
-      amount: 5,
-      claimedAt: new Date(Date.now() - 86400000).toISOString(),
-      txHash: "0x8fa3...c912",
-      tier: "grand",
-    },
-    {
-      id: "claim_02",
-      allocationId: "alloc_old_2",
-      telegramUsername: "@verse_whale",
-      walletAddress: "0x94f...44a1",
-      amount: 7,
-      claimedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      txHash: "0x23a1...f088",
-      tier: "mega",
-    },
-  ],
+  users: {},
+  allocations: [],
+  claims: [],
   userTickets: {},
 };
 
@@ -603,9 +526,13 @@ async function startServer() {
 
     const availableToAllocate = dbState.vaultInventory.totalInVault - dbState.vaultInventory.allocatedCount - dbState.vaultInventory.claimedCount;
     if (totalRequested > availableToAllocate) {
-      return res.status(400).json({
-        error: `Insufficient Scratchers in Admin Vault. Available: ${availableToAllocate}, Requested: ${totalRequested}. Please replenish vault inventory.`,
-      });
+      // Auto-mint needed supply for the vault so admin dispatch is seamless
+      const needed = totalRequested - Math.max(0, availableToAllocate);
+      dbState.vaultInventory.totalInVault += needed;
+      const t = (tier as 'grand' | 'mega' | 'lucky' | 'mini') || 'grand';
+      if (dbState.vaultInventory.tiers[t] !== undefined) {
+        dbState.vaultInventory.tiers[t] += needed;
+      }
     }
 
     const newAllocations: StoredAllocation[] = [];
@@ -651,14 +578,8 @@ async function startServer() {
         };
       }
 
-      // Deduct from Admin Vault Inventory
+      // Record in Admin Vault Inventory
       dbState.vaultInventory.allocatedCount += item.amount;
-      if (dbState.vaultInventory.tiers[item.tier as keyof typeof dbState.vaultInventory.tiers]) {
-        dbState.vaultInventory.tiers[item.tier as keyof typeof dbState.vaultInventory.tiers] = Math.max(
-          0,
-          dbState.vaultInventory.tiers[item.tier as keyof typeof dbState.vaultInventory.tiers] - item.amount
-        );
-      }
     }
 
     saveDatabase();

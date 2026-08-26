@@ -184,7 +184,7 @@ export default function App() {
     setIsAdminUnlocked(true);
     setIsPinModalOpen(false);
     setCurrentView('admin');
-    handleNotify('Admin Access Granted', 'PIN 2004 verified. Welcome to Verse Admin Panel.');
+    handleNotify('Admin Access Granted', 'Welcome to Verse Admin Panel.');
   };
 
   return (
@@ -229,14 +229,14 @@ export default function App() {
           onError={handleConnectError}
         />
 
-        {/* Admin PIN 2004 Modal */}
+        {/* Admin PIN Modal */}
         <AdminPinModal
           isOpen={isPinModalOpen}
           onClose={() => setIsPinModalOpen(false)}
           onSuccess={handleAdminPinSuccess}
         />
 
-        {/* Footer with "Verse by Bitcoin.com", Admin Panel (PIN 2004) at the down footer side, and @Getverse Telegram link */}
+        {/* Footer with "Verse by Bitcoin.com", Admin Panel button, and @Getverse Telegram link */}
         <footer className="border-t border-slate-800/80 bg-[#04060C] py-6 px-4">
           <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -245,7 +245,7 @@ export default function App() {
               </span>
               <span className="text-slate-600 text-xs">|</span>
 
-              {/* Admin Panel PIN 2004 Button */}
+              {/* Admin Panel Access Button */}
               {currentView === 'admin' ? (
                 <button
                   id="footer-back-home-btn"
@@ -261,7 +261,7 @@ export default function App() {
                   className="text-xs font-bold text-slate-400 hover:text-[#00E5FF] transition-colors cursor-pointer flex items-center gap-1.5 group"
                 >
                   <Lock size={12} className="text-slate-500 group-hover:text-[#00E5FF] transition-colors" />
-                  <span>Admin Panel (PIN: 2004)</span>
+                  <span>Admin Panel</span>
                 </button>
               )}
             </div>

@@ -58,9 +58,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
   // Send NFT Scratchers form state
-  const [rawInput, setRawInput] = useState<string>(
-    '@zionoluchi 5\n@verse_hunter 10\n@crypto_gem 3'
-  );
+  const [rawInput, setRawInput] = useState<string>('');
   const [selectedTier, setSelectedTier] = useState<ScratcherTierType>('grand');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [allocationSuccessMsg, setAllocationSuccessMsg] = useState<string | null>(null);
@@ -250,7 +248,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       theme: 'gold',
       icon: Crown,
       contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.grand || 2500,
+      available: data?.inventory?.tiers?.grand || 0,
       image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
       badge: 'TOP TIER NFT',
       badgeColor: 'bg-amber-400/20 text-amber-300 border-amber-400/40',
@@ -263,7 +261,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       theme: 'neon',
       icon: Flame,
       contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.mega || 2500,
+      available: data?.inventory?.tiers?.mega || 0,
       image: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&auto=format&fit=crop&q=80',
       badge: 'POPULAR NFT',
       badgeColor: 'bg-cyan-400/20 text-cyan-300 border-cyan-400/40',
@@ -276,7 +274,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       theme: 'cyan',
       icon: Sparkles,
       contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.lucky || 2500,
+      available: data?.inventory?.tiers?.lucky || 0,
       image: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop&q=80',
       badge: 'COMMUNITY NFT',
       badgeColor: 'bg-purple-400/20 text-purple-300 border-purple-400/40',
@@ -289,7 +287,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       theme: 'purple',
       icon: Coins,
       contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.mini || 2500,
+      available: data?.inventory?.tiers?.mini || 0,
       image: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80',
       badge: 'STARTER NFT',
       badgeColor: 'bg-emerald-400/20 text-emerald-300 border-emerald-400/40',
@@ -314,7 +312,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   ADMIN NFT VAULT &amp; DISPATCH
                 </h1>
                 <span className="px-2.5 py-0.5 rounded-full bg-cyan-500/20 text-[#00E5FF] text-[10px] font-black uppercase tracking-wider border border-cyan-500/30">
-                  PIN Verified (2004)
+                  Admin Access
                 </span>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 font-medium mt-1">
@@ -719,7 +717,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   value={rawInput}
                   onChange={(e) => setRawInput(e.target.value)}
                   rows={6}
-                  placeholder={`@zionoluchi 5\n@verse_hunter 10\n@crypto_gem 3\n@polygon_user, 7`}
+                  placeholder={`@username 5\n@telegram_handle 10`}
                   className="w-full p-4 rounded-2xl bg-[#040813] border border-slate-800 focus:border-[#00E5FF] focus:outline-none font-mono text-sm text-cyan-200 placeholder-slate-600 transition-colors"
                 />
               </div>
