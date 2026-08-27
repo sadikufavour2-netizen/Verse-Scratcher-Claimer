@@ -1,0 +1,19 @@
+{
+  "adminWallet": null,
+  "vaultInventory": {
+    "totalInVault": 12500,
+    "allocatedCount": 0,
+    "claimedCount": 0,
+    "adminWalletAddress": null,
+    "tiers": {
+      "grand": 2500,
+      "mega": 3500,
+      "lucky": 3500,
+      "mini": 3000
+    }
+  },
+  "users": {},
+  "allocations": [],
+  "claims": [],
+  "userTickets": {}
+}

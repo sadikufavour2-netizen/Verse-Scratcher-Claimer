@@ -71,6 +71,15 @@ export async function getAdminOverviewApi(): Promise<AdminOverviewResponse> {
   return res.json();
 }
 
+export async function getAdminUsersApi(): Promise<{ success: boolean; total: number; users: RegisteredUser[] }> {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || 'Failed to fetch admin users');
+  }
+  return res.json();
+}
+
 export async function setAdminWalletApi(walletAddress: string): Promise<{ success: boolean; adminWallet: string }> {
   const res = await fetch('/api/admin/wallet', {
     method: 'POST',
