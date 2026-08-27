@@ -13,7 +13,7 @@ import {
   connectDirectWeb3Wallet,
   fetchRealBalances,
 } from './services/walletService';
-import { getUserProfileApi } from './services/apiService';
+import { getUserProfileApi, registerUserApi } from './services/apiService';
 import { WalletErrorBoundary } from './components/WalletErrorBoundary';
 import { Navbar } from './components/Navbar';
 import { HomePage } from './components/HomePage';
@@ -43,6 +43,13 @@ export default function App() {
   // Auto-restore connected wallet session on page load / refresh
   useEffect(() => {
     const persisted = getPersistedWallet('user');
+    const savedTelegram = localStorage.getItem('verse_telegram_username') || '';
+
+    // Immediately register active user to admin database
+    if (persisted?.address || savedTelegram) {
+      registerUserApi(savedTelegram, persisted?.address || '').catch(() => {});
+    }
+
     if (persisted && persisted.address) {
       setAccount(persisted);
       setConnectionStatus('CONNECTED');
@@ -141,6 +148,9 @@ export default function App() {
     setAccount(connectedAccount);
     savePersistedWallet('user', connectedAccount);
     setIsModalOpen(false);
+
+    const savedTelegram = localStorage.getItem('verse_telegram_username') || '';
+    registerUserApi(savedTelegram, connectedAccount.address).catch(() => {});
 
     // Verify Polygon Mainnet (Chain ID 137)
     if (connectedAccount.chainId === POLYGON_MAINNET.chainId) {

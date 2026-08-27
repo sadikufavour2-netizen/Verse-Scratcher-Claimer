@@ -47,11 +47,12 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
   const isTelegramEntered = !!savedUsername.trim();
   const isReadyForHome = isWalletConnected && isTelegramEntered;
 
-  // Fetch profile when wallet connects or saved username is present
+  // Fetch profile and auto-register whenever wallet or saved username changes
   useEffect(() => {
     const identifier = account?.address || savedUsername;
     if (identifier) {
-      getUserProfileApi(identifier)
+      // Sync with server immediately
+      registerUserApi(savedUsername || '', account?.address || '')
         .then((p) => {
           setUserProfile(p);
           if (p.user?.telegramUsername) {
@@ -59,7 +60,17 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
             localStorage.setItem('verse_telegram_username', p.user.telegramUsername);
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          getUserProfileApi(identifier)
+            .then((p) => {
+              setUserProfile(p);
+              if (p.user?.telegramUsername) {
+                setSavedUsername(p.user.telegramUsername);
+                localStorage.setItem('verse_telegram_username', p.user.telegramUsername);
+              }
+            })
+            .catch(() => {});
+        });
     }
   }, [account?.address, savedUsername]);
 
@@ -76,18 +87,19 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
 
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsSubmitting(true);
 
     // Save in localStorage immediately
     localStorage.setItem('verse_telegram_username', cleaned);
     setSavedUsername(cleaned);
 
-    // If wallet is also connected, sync to server admin database
-    if (account?.address) {
-      setIsSubmitting(true);
-      try {
-        const profile = await registerUserApi(cleaned, account.address);
-        setUserProfile(profile);
-        setSuccessMsg(`Telegram username ${cleaned} and wallet linked and stored at the Admin Panel!`);
+    try {
+      // Always register immediately to backend admin database
+      const profile = await registerUserApi(cleaned, account?.address || '');
+      setUserProfile(profile);
+
+      if (account?.address) {
+        setSuccessMsg(`Telegram username ${cleaned} and Polygon wallet linked in Admin Panel!`);
         if (onNotify) {
           onNotify('Connected & Synced', `${cleaned} linked with Polygon wallet.`);
         }
@@ -95,13 +107,13 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
         setTimeout(() => {
           onProceedToHome();
         }, 600);
-      } catch (err: any) {
-        setErrorMsg(err.message || 'Failed to save to admin database');
-      } finally {
-        setIsSubmitting(false);
+      } else {
+        setSuccessMsg(`Telegram username ${cleaned} saved in Admin database! Now connect your Polygon wallet.`);
       }
-    } else {
-      setSuccessMsg(`Telegram username ${cleaned} set. Now connect your Web3 wallet to proceed.`);
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to save to admin database');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
