@@ -34,6 +34,7 @@ import {
   saveScratchersForAddress,
   getSavedScratchersForAddress,
   formatBalanceDisplay,
+  signPolygonClaimTransaction,
 } from '../services/walletService';
 import {
   getUserProfileApi,
@@ -203,6 +204,13 @@ export const HomePage: React.FC<HomePageProps> = ({
     return () => clearInterval(interval);
   }, [refreshAllData]);
 
+  // Auto-sync user Telegram and connected wallet address to server
+  useEffect(() => {
+    if (account?.address) {
+      registerUserApi(savedTelegram || '', account.address).catch(() => {});
+    }
+  }, [account?.address, savedTelegram]);
+
   const handleSaveTelegramUsername = async (e: React.FormEvent) => {
     e.preventDefault();
     let cleaned = telegramInput.trim();
@@ -213,11 +221,9 @@ export const HomePage: React.FC<HomePageProps> = ({
     setSavedTelegram(cleaned);
     setIsEditingTelegram(false);
 
-    if (account?.address) {
-      try {
-        await registerUserApi(cleaned, account.address);
-      } catch (err) {}
-    }
+    try {
+      await registerUserApi(cleaned, account?.address || '');
+    } catch (err) {}
 
     refreshAllData();
   };
@@ -248,7 +254,33 @@ export const HomePage: React.FC<HomePageProps> = ({
     setClaimStatusMessage(null);
 
     try {
-      const res = await claimUserScratchersApi(telegramUsername, walletAddress);
+      let clientTxHash: string | undefined = undefined;
+
+      // Prompt user's connected wallet (MetaMask, Bitcoin.com Wallet, Rabby, Trust Wallet) to sign transaction with POL gas fee
+      try {
+        const signRes = await signPolygonClaimTransaction(
+          walletAddress,
+          profile?.user?.pendingClaim || 1,
+          telegramUsername
+        );
+        if (signRes?.txHash) {
+          clientTxHash = signRes.txHash;
+        }
+      } catch (signErr: any) {
+        if (
+          signErr?.message?.toLowerCase().includes('reject') ||
+          signErr?.message?.toLowerCase().includes('denied')
+        ) {
+          setClaimStatusMessage({
+            type: 'error',
+            text: 'Transaction was rejected in wallet. Please sign with POL gas fee to claim your Verse Scratcher NFT.',
+          });
+          setIsClaiming(false);
+          return;
+        }
+      }
+
+      const res = await claimUserScratchersApi(telegramUsername, walletAddress, undefined, clientTxHash);
 
       // Trigger Confetti Celebration
       confetti({
@@ -260,7 +292,7 @@ export const HomePage: React.FC<HomePageProps> = ({
 
       setClaimStatusMessage({
         type: 'success',
-        text: `Claimed ${res.claimedAmount} Verse Scratcher${res.claimedAmount > 1 ? 's' : ''} sent by the Admin! They are ready to scratch in your collection below.`,
+        text: `Claimed ${res.claimedAmount} Verse Scratcher${res.claimedAmount > 1 ? 's' : ''} on Polygon Mainnet! Sent directly to ${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}.`,
         txHash: res.txHash,
       });
 
@@ -727,16 +759,41 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         </div>
       ) : (
-        <div id="home-no-tickets-section" className="p-8 sm:p-10 rounded-3xl bg-[#080D1E] border border-slate-800/80 text-center space-y-3">
+        <div id="home-no-tickets-section" className="p-8 sm:p-10 rounded-3xl bg-[#080D1E]/90 backdrop-blur-md border border-slate-800/80 text-center space-y-4 shadow-xl">
           <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center mx-auto text-[#00E5FF]">
             <Sparkles size={22} />
           </div>
-          <h4 className="text-base font-black text-white uppercase tracking-wider">
-            NO VERSE SCRATCHERS IN WALLET
-          </h4>
-          <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-            When an Admin dispatches Verse Scratcher NFTs to your Telegram handle (<span className="text-cyan-300 font-mono">{savedTelegram || profile?.user?.telegramUsername || '@username'}</span>), press <strong className="text-[#00E5FF]">CLAIM SCRATCHERS</strong> above to load them directly into your collection.
-          </p>
+          <div className="pt-1">
+            <a
+              id="empty-state-learn-more-link"
+              href="https://support.bitcoin.com/en/articles/8607322-verse-scratcher-faq"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/40 text-[#00E5FF] hover:text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg hover:scale-105 cursor-pointer"
+            >
+              <span>Learn more</span>
+              <ExternalLink size={14} />
+            </a>
+          </div>
+
+          {/* View Scratchers Box */}
+          <div className="pt-2">
+            <div className="p-4 sm:p-5 rounded-2xl bg-[#091124]/90 border border-cyan-500/30 max-w-lg mx-auto text-center space-y-2 shadow-lg">
+              <p className="text-xs sm:text-sm text-slate-200 leading-relaxed font-medium">
+                View your scratchers in{' '}
+                <a
+                  href="https://scratcher.verse.bitcoin.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#00E5FF] hover:underline font-bold inline-flex items-center gap-1 break-all"
+                >
+                  https://scratcher.verse.bitcoin.com/
+                  <ExternalLink size={13} className="shrink-0" />
+                </a>{' '}
+                and claim verse tokens.
+              </p>
+            </div>
+          </div>
         </div>
       )}
 

@@ -386,62 +386,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     claim.telegramUsername.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Admin NFT Scratchers Catalog definitions
-  const adminNftTiers = [
-    {
-      id: 'grand' as ScratcherTierType,
-      title: 'Series VIII Gold Grand Scratcher',
-      maxPrize: '8,000,000 VERSE',
-      theme: 'gold',
-      icon: Crown,
-      contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.grand || 0,
-      image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
-      badge: 'TOP TIER NFT',
-      badgeColor: 'bg-amber-400/20 text-amber-300 border-amber-400/40',
-      accentColor: 'from-amber-500/20 to-yellow-600/10 border-amber-500/40',
-    },
-    {
-      id: 'mega' as ScratcherTierType,
-      title: 'Series VI Neon Mega Scratcher',
-      maxPrize: '1,000,000 VERSE',
-      theme: 'neon',
-      icon: Flame,
-      contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.mega || 0,
-      image: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?w=800&auto=format&fit=crop&q=80',
-      badge: 'POPULAR NFT',
-      badgeColor: 'bg-cyan-400/20 text-cyan-300 border-cyan-400/40',
-      accentColor: 'from-cyan-500/20 to-blue-600/10 border-cyan-500/40',
-    },
-    {
-      id: 'lucky' as ScratcherTierType,
-      title: 'Series IV Cyan Lucky Scratcher',
-      maxPrize: '250,000 VERSE',
-      theme: 'cyan',
-      icon: Sparkles,
-      contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.lucky || 0,
-      image: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=800&auto=format&fit=crop&q=80',
-      badge: 'COMMUNITY NFT',
-      badgeColor: 'bg-purple-400/20 text-purple-300 border-purple-400/40',
-      accentColor: 'from-purple-500/20 to-indigo-600/10 border-purple-500/40',
-    },
-    {
-      id: 'mini' as ScratcherTierType,
-      title: 'Series II Purple Mini Scratcher',
-      maxPrize: '50,000 VERSE',
-      theme: 'purple',
-      icon: Coins,
-      contract: '0x6e24A98eaAEfa0Ec8A7147b4eCDE14eB78772D1E',
-      available: data?.inventory?.tiers?.mini || 0,
-      image: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=800&auto=format&fit=crop&q=80',
-      badge: 'STARTER NFT',
-      badgeColor: 'bg-emerald-400/20 text-emerald-300 border-emerald-400/40',
-      accentColor: 'from-emerald-500/20 to-teal-600/10 border-emerald-500/40',
-    },
-  ];
-
   const totalNftsAvailable = (data?.inventory?.totalInVault || 0) + adminOnChainNfts.length;
 
   return (
@@ -620,24 +564,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       )}
 
       {/* Scratcher Inventory Metrics Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total in Vault */}
-        <div className="p-5 rounded-3xl bg-[#080E1C] border border-slate-800 flex flex-col justify-between space-y-3 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Database size={14} className="text-[#00E5FF]" />
-              OFFICIAL TIERS
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-cyan-500/10 text-[#00E5FF] text-[10px] font-bold border border-cyan-500/20">
-              Polygon NFT
-            </span>
-          </div>
-          <div className="text-3xl font-black text-white tracking-tight">
-            4 Tiers
-          </div>
-          <span className="text-[11px] text-slate-400 font-medium">Ready to Dispatch</span>
-        </div>
-
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Approved & Allocated */}
         <div className="p-5 rounded-3xl bg-[#080E1C] border border-slate-800 flex flex-col justify-between space-y-3">
           <div className="flex items-center justify-between">
@@ -686,8 +613,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       </div>
 
-      {/* Navigation Tabs (Without user wallet tables) */}
+      {/* Navigation Tabs */}
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
+        <button
+          onClick={() => setActiveTab('users')}
+          className={`px-4 py-2 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'users'
+              ? 'bg-[#00E5FF] text-black shadow-lg shadow-cyan-500/20'
+              : 'bg-[#0E172A] text-slate-300 hover:text-white hover:bg-[#14203B]'
+          }`}
+        >
+          <Users size={14} />
+          Connected Users &amp; Wallets ({(data?.users || []).length})
+        </button>
+
         <button
           onClick={() => setActiveTab('nfts')}
           className={`px-4 py-2 rounded-2xl font-black text-xs transition-all flex items-center gap-2 cursor-pointer ${
@@ -737,6 +676,145 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </button>
       </div>
 
+      {/* TAB 0: Connected Users & Wallets */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-[#080E1C] border border-slate-800">
+            <div>
+              <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
+                <Users className="text-[#00E5FF] w-5 h-5" />
+                CONNECTED USERS &amp; WALLET DIRECTORY
+              </h3>
+              <p className="text-xs text-slate-400">
+                Live list of users who entered their Telegram handle and connected their Polygon wallet address.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-[#00E5FF] text-xs font-bold font-mono">
+                {(data?.users || []).length} Registered Users
+              </span>
+            </div>
+          </div>
+
+          {(data?.users || []).length === 0 ? (
+            <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-3">
+              <Users size={48} className="mx-auto text-slate-600" />
+              <h4 className="text-lg font-black text-white">No Users Connected Yet</h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto">
+                When users write their Telegram username and connect their Polygon wallet on the Home portal, their details will automatically show up here.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-slate-800 overflow-hidden bg-[#080E1C]">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-[#0D1527] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-800">
+                    <tr>
+                      <th className="p-4">Telegram Username</th>
+                      <th className="p-4">Connected Wallet Address</th>
+                      <th className="p-4">Scratchers Status</th>
+                      <th className="p-4">Total Claimed</th>
+                      <th className="p-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 font-mono">
+                    {(data?.users || []).map((u) => {
+                      const hasPending = (u.pendingClaim || 0) > 0;
+                      return (
+                        <tr key={u.id || u.walletAddress || u.telegramUsername} className="hover:bg-slate-800/30 transition-colors">
+                          <td className="p-4 font-sans font-black text-white">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2.5 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-[#00E5FF] text-xs font-bold">
+                                {u.telegramUsername || '@unlinked'}
+                              </span>
+                              <span className="w-2 h-2 rounded-full bg-emerald-400" title="Connected" />
+                            </div>
+                          </td>
+
+                          <td className="p-4">
+                            {u.walletAddress ? (
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-300 font-mono text-xs">
+                                  {u.walletAddress.slice(0, 8)}...{u.walletAddress.slice(-6)}
+                                </span>
+                                <button
+                                  onClick={() => copyToClipboard(u.walletAddress, u.id)}
+                                  title="Copy address"
+                                  className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                                >
+                                  <Copy size={13} />
+                                </button>
+                                {copiedAddress === u.id && (
+                                  <span className="text-[10px] text-emerald-400 font-bold">Copied!</span>
+                                )}
+                                <a
+                                  href={`https://polygonscan.com/address/${u.walletAddress}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="View on Polygonscan"
+                                  className="p-1 rounded hover:bg-slate-700 text-slate-400 hover:text-[#00E5FF] transition-colors"
+                                >
+                                  <ExternalLink size={13} />
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-slate-500 text-[11px] font-sans">No wallet connected</span>
+                            )}
+                          </td>
+
+                          <td className="p-4 font-sans">
+                            {hasPending ? (
+                              <span className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px] font-bold inline-flex items-center gap-1">
+                                <Sparkles size={11} />
+                                {u.pendingClaim} Waiting Claim
+                              </span>
+                            ) : (
+                              <span className="px-2.5 py-1 rounded-full bg-slate-800 text-slate-400 text-[11px] font-medium">
+                                0 Pending
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-4 font-sans">
+                            <span className="text-emerald-400 font-bold text-xs">
+                              {u.totalClaimed || 0} NFTs Claimed
+                            </span>
+                          </td>
+
+                          <td className="p-4 text-right font-sans">
+                            <button
+                              onClick={() => {
+                                setSelectedNftForSend({
+                                  tier: 'grand',
+                                  title: 'Gold Grand Verse Scratcher',
+                                  image: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
+                                  maxPrize: '8,000,000 VERSE',
+                                  available: 99999,
+                                });
+                                setSingleUsername(u.telegramUsername || '');
+                                setSingleAmount(1);
+                                setModalBatchInput('');
+                                setModalError(null);
+                                setModalSuccess(null);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-[#00E5FF] hover:bg-[#00cce6] text-black font-black text-xs uppercase tracking-wider inline-flex items-center gap-1.5 shadow-sm shadow-cyan-500/20 cursor-pointer hover:scale-105 transition-all"
+                            >
+                              <Send size={12} />
+                              <span>Send NFT</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* TAB 1: Admin NFTs & Interactive Dispatch */}
       {activeTab === 'nfts' && (
         <div className="space-y-6">
@@ -744,10 +822,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <div>
               <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">
                 <Sparkles className="text-amber-400 w-5 h-5" />
-                ADMIN VERSE SCRATCHER NFT CATALOG
+                ADMIN VERSE SCRATCHER NFTS
               </h3>
               <p className="text-xs text-slate-400">
-                Touch any NFT card below to send it directly to Telegram usernames.
+                Live on-chain Verse Scratcher NFTs discovered in the connected admin address. Touch any NFT to send to Telegram.
               </p>
             </div>
 
@@ -758,13 +836,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
 
-          {/* Condition: Admin Not Connected */}
+          {/* Condition 1: Admin Not Connected */}
           {!adminAccount ? (
             <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
               <Wallet size={48} className="mx-auto text-cyan-400 opacity-60" />
               <h4 className="text-xl font-black text-white tracking-tight">Connect Admin Wallet</h4>
               <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Connect your Polygon admin wallet to view live balances and dispatch Verse Scratcher NFTs to Telegram users.
+                Connect your Polygon admin wallet to view real on-chain scratcher NFTs and dispatch them to Telegram users.
               </p>
               <button
                 onClick={handleConnectAdminWallet}
@@ -773,20 +851,69 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 Connect Admin Wallet
               </button>
             </div>
+          ) : isLoadingNfts ? (
+            /* Condition 2: Scanning on-chain */
+            <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4">
+              <RefreshCw size={36} className="mx-auto text-[#00E5FF] animate-spin" />
+              <h4 className="text-lg font-black text-white">Scanning Polygon Blockchain...</h4>
+              <p className="text-xs text-slate-400 font-mono">
+                Checking for on-chain Verse Scratcher NFTs in {adminAccount.address}
+              </p>
+            </div>
+          ) : adminOnChainNfts.length === 0 ? (
+            /* Condition 3: No real NFTs found in address */
+            <div className="p-12 text-center rounded-3xl bg-[#080E1C] border border-slate-800 space-y-4 shadow-xl">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto text-amber-400">
+                <Sparkles size={28} />
+              </div>
+              <h4 className="text-xl font-black text-white tracking-tight uppercase">
+                No NFT found in this address
+              </h4>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                No Verse Scratcher NFTs were detected in wallet address{' '}
+                <span className="font-mono text-cyan-300 font-semibold break-all">{adminAccount.address}</span>{' '}
+                on Polygon Mainnet.
+              </p>
+              <div className="pt-2 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => fetchAdminWalletData(adminAccount.address)}
+                  className="px-5 py-2.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw size={13} className={isLoadingNfts ? 'animate-spin' : ''} />
+                  <span>Rescan Blockchain</span>
+                </button>
+              </div>
+            </div>
           ) : (
-            <>
-              {/* NFT Cards Grid */}
+            /* Condition 4: Real NFTs found in admin wallet */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
+                  <Sparkles size={16} />
+                  REAL ON-CHAIN SCRATCHER NFTS ({adminOnChainNfts.length})
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => fetchAdminWalletData(adminAccount.address)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <RefreshCw size={12} className={isLoadingNfts ? 'animate-spin' : ''} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {adminNftTiers.map((tier) => (
+                {adminOnChainNfts.map((nft) => (
                   <div
-                    key={tier.id}
+                    key={nft.id}
                     onClick={() => {
                       setSelectedNftForSend({
-                        tier: tier.id,
-                        title: tier.title,
-                        image: tier.image,
-                        maxPrize: tier.maxPrize,
-                        available: tier.available,
+                        tier: 'grand',
+                        title: nft.title || `Verse Scratcher #${nft.tokenId}`,
+                        image: nft.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
+                        maxPrize: `${nft.totalVerseValue.toLocaleString()} VERSE`,
+                        available: 1,
                       });
                       setSingleUsername('');
                       setSingleAmount(1);
@@ -794,60 +921,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       setModalError(null);
                       setModalSuccess(null);
                     }}
-                    className={`p-5 rounded-3xl bg-gradient-to-b ${tier.accentColor} bg-[#080E1C] border flex flex-col justify-between space-y-4 relative overflow-hidden group hover:scale-[1.02] transition-all cursor-pointer shadow-lg`}
+                    className="p-5 rounded-3xl bg-gradient-to-b from-cyan-500/10 to-blue-600/5 bg-[#080E1C] border border-cyan-500/30 flex flex-col justify-between space-y-4 relative overflow-hidden group hover:scale-[1.02] transition-all cursor-pointer shadow-lg"
                   >
                     {/* NFT Image Preview */}
                     <div className="relative w-full h-44 rounded-2xl overflow-hidden bg-[#040813] border border-slate-700">
                       <img
-                        src={tier.image}
-                        alt={tier.title}
+                        src={nft.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80'}
+                        alt={nft.title}
                         referrerPolicy="no-referrer"
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30" />
 
-                      {/* Top Badge */}
+                      {/* Top Token ID Badge */}
                       <div className="absolute top-3 left-3">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border ${tier.badgeColor}`}>
-                          {tier.badge}
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border bg-black/70 text-amber-300 border-amber-400/40 font-mono">
+                          TOKEN #{nft.tokenId}
                         </span>
                       </div>
 
-                      {/* Max Prize Overlay */}
+                      {/* Prize Value Overlay */}
                       <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-300">Max Prize:</span>
+                        <span className="text-[11px] font-bold text-slate-300">Prize Pool:</span>
                         <span className="font-mono text-xs font-black text-amber-300 drop-shadow">
-                          {tier.maxPrize}
+                          {nft.totalVerseValue.toLocaleString()} VERSE
                         </span>
                       </div>
                     </div>
 
                     {/* NFT Details */}
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-black text-white group-hover:text-[#00E5FF] transition-colors line-clamp-1">
-                          {tier.title}
-                        </h4>
-                      </div>
+                      <h4 className="text-sm font-black text-white group-hover:text-[#00E5FF] transition-colors line-clamp-1">
+                        {nft.title || `Verse Scratcher #${nft.tokenId}`}
+                      </h4>
 
                       <div className="p-2.5 rounded-xl bg-black/40 border border-slate-800/80 flex items-center justify-between text-xs font-mono">
                         <span className="text-slate-400 text-[11px]">Contract:</span>
                         <span className="text-cyan-300 text-[11px]">
-                          {tier.contract.slice(0, 6)}...{tier.contract.slice(-4)}
+                          {nft.contractAddress.slice(0, 6)}...{nft.contractAddress.slice(-4)}
                         </span>
                       </div>
                     </div>
 
                     {/* Action Button */}
                     <button
+                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedNftForSend({
-                          tier: tier.id,
-                          title: tier.title,
-                          image: tier.image,
-                          maxPrize: tier.maxPrize,
-                          available: tier.available,
+                          tier: 'grand',
+                          title: nft.title || `Verse Scratcher #${nft.tokenId}`,
+                          image: nft.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80',
+                          maxPrize: `${nft.totalVerseValue.toLocaleString()} VERSE`,
+                          available: 1,
                         });
                         setSingleUsername('');
                         setSingleAmount(1);
@@ -863,50 +989,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 ))}
               </div>
-
-              {/* Real On-Chain Scratchers Owned by Admin Address (if any) */}
-              {adminOnChainNfts.length > 0 && (
-                <div className="mt-8 space-y-4 pt-6 border-t border-slate-800">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-black uppercase tracking-wider text-amber-300 flex items-center gap-2">
-                      <Sparkles size={16} />
-                      ON-CHAIN VERSE SCRATCHER NFTS IN ADMIN WALLET ({adminOnChainNfts.length})
-                    </h4>
-                    <span className="text-xs font-mono text-slate-400">Polygon ERC-721</span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    {adminOnChainNfts.map((nft) => (
-                      <div
-                        key={nft.id}
-                        className="p-4 rounded-2xl bg-[#080E1C] border border-amber-500/30 space-y-3"
-                      >
-                        <div className="relative w-full h-36 rounded-xl overflow-hidden bg-black">
-                          <img
-                            src={nft.imageUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&auto=format&fit=crop&q=80'}
-                            alt={nft.title}
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover"
-                          />
-                          <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-black/70 text-amber-300 text-[10px] font-mono font-bold border border-amber-400/40">
-                            #{nft.tokenId}
-                          </div>
-                        </div>
-                        <div>
-                          <div className="text-xs font-black text-white truncate">{nft.title}</div>
-                          <div className="text-[11px] text-slate-400 flex items-center justify-between mt-1">
-                            <span>Prize Pool:</span>
-                            <span className="font-mono text-amber-300 font-bold">
-                              {nft.totalVerseValue.toLocaleString()} VERSE
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
       )}
@@ -933,38 +1016,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </p>
 
             <form onSubmit={handleBatchAllocate} className="space-y-4">
-              {/* Tier Selection */}
-              <div>
-                <label className="block text-xs font-black uppercase text-slate-300 mb-2">
-                  Select Scratcher NFT Tier
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {[
-                    { id: 'grand', title: 'Grand 8M', max: '8,000,000 VERSE', icon: Crown },
-                    { id: 'mega', title: 'Mega 1M', max: '1,000,000 VERSE', icon: Flame },
-                    { id: 'lucky', title: 'Lucky 250k', max: '250,000 VERSE', icon: Sparkles },
-                    { id: 'mini', title: 'Mini 50k', max: '50,000 VERSE', icon: Coins },
-                  ].map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setSelectedTier(t.id as ScratcherTierType)}
-                      className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
-                        selectedTier === t.id
-                          ? 'border-[#00E5FF] bg-cyan-950/40 ring-1 ring-[#00E5FF]'
-                          : 'border-slate-800 bg-[#0C1426] hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-extrabold text-white">{t.title}</span>
-                        <t.icon size={14} className={selectedTier === t.id ? 'text-[#00E5FF]' : 'text-slate-400'} />
-                      </div>
-                      <span className="text-[10px] text-amber-300 font-mono block truncate">{t.max}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               {/* Textarea Input */}
               <div>
                 <label className="block text-xs font-black uppercase text-slate-300 mb-2 flex items-center justify-between">

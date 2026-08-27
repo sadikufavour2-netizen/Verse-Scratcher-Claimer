@@ -22,6 +22,7 @@ import { AdminPinModal } from './components/AdminPinModal';
 import { WalletConnectModal } from './components/WalletConnectModal';
 import { NotificationToast, ToastNotification } from './components/NotificationToast';
 import { Lock, Shield } from 'lucide-react';
+import verseScratcherBg from './assets/images/verse_scratcher_bg_1787859226217.jpg';
 
 export default function App() {
   // Navigation & View mode: 'home' (Home Page with Balances & Claim) | 'admin' (Admin Allocation Panel)
@@ -241,30 +242,84 @@ export default function App() {
 
   return (
     <WalletErrorBoundary>
-      <div className="min-h-screen bg-[#060913] text-slate-100 flex flex-col selection:bg-[#00E5FF]/30 selection:text-[#00E5FF] font-sans antialiased">
-        {/* Navigation Bar (Clean - top tabs & connect wallet button removed) */}
-        <Navbar onLogoClick={() => setCurrentView('home')} />
+      <div className="min-h-screen bg-[#050811] text-slate-100 flex flex-col selection:bg-[#00E5FF]/30 selection:text-[#00E5FF] font-sans antialiased relative overflow-x-hidden">
+        {/* Background Verse Scratcher Art Wallpaper */}
+        <div
+          className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat pointer-events-none opacity-50 scale-100 transition-all brightness-95 saturate-110"
+          style={{ backgroundImage: `url(${verseScratcherBg})` }}
+        />
+        {/* Atmospheric Darker Contrast Overlay */}
+        <div className="fixed inset-0 z-0 bg-gradient-to-b from-[#050811]/75 via-[#050811]/85 to-[#050811]/95 pointer-events-none" />
 
-        {/* Main Application Body */}
-        <main className="flex-1">
-          {currentView === 'admin' ? (
-            <AdminPanel
-              onSwitchToUserPortal={() => setCurrentView('home')}
-              onNotify={handleNotify}
-            />
-          ) : (
-            <HomePage
-              status={connectionStatus}
-              account={account}
-              onConnectClick={handleOpenConnect}
-              onDisconnectClick={handleDisconnect}
-              onSwitchToConnectView={() => {}}
-              onSwitchToAdminView={handleAdminClick}
-              onUpdateAccountBalance={handleUpdateAccountBalance}
-              onNotify={handleNotify}
-            />
-          )}
-        </main>
+        {/* Content Wrapper */}
+        <div className="relative z-10 flex flex-col min-h-screen">
+          {/* Navigation Bar */}
+          <Navbar onLogoClick={() => setCurrentView('home')} />
+
+          {/* Main Application Body */}
+          <main className="flex-1">
+            {currentView === 'admin' ? (
+              <AdminPanel
+                onSwitchToUserPortal={() => setCurrentView('home')}
+                onNotify={handleNotify}
+              />
+            ) : (
+              <HomePage
+                status={connectionStatus}
+                account={account}
+                onConnectClick={handleOpenConnect}
+                onDisconnectClick={handleDisconnect}
+                onSwitchToConnectView={() => {}}
+                onSwitchToAdminView={handleAdminClick}
+                onUpdateAccountBalance={handleUpdateAccountBalance}
+                onNotify={handleNotify}
+              />
+            )}
+          </main>
+
+          {/* Persistent Footer with Centered Admin Panel and Getverse Link */}
+          <footer className="border-t border-slate-800/80 bg-[#04060C]/90 backdrop-blur-md py-6 px-4 mt-auto">
+            <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Left blank spacing for symmetry on desktop */}
+              <div className="hidden sm:block sm:w-28" />
+
+              {/* Center: Admin Panel Access Button */}
+              <div className="flex items-center justify-center">
+                {currentView === 'admin' ? (
+                  <button
+                    id="footer-back-home-btn"
+                    onClick={() => setCurrentView('home')}
+                    className="px-4 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-cyan-500/40 text-xs font-black text-[#00E5FF] hover:underline cursor-pointer flex items-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <span>Back to Home</span>
+                  </button>
+                ) : (
+                  <button
+                    id="footer-admin-panel-btn"
+                    onClick={handleAdminClick}
+                    className="text-xs font-bold text-slate-300 hover:text-[#00E5FF] transition-all cursor-pointer flex items-center gap-1.5 group bg-slate-900/70 hover:bg-slate-900 px-4 py-2 rounded-xl border border-slate-800 hover:border-cyan-500/40 shadow-sm"
+                  >
+                    <Lock size={13} className="text-slate-400 group-hover:text-[#00E5FF] transition-colors" />
+                    <span>Admin Panel</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Right: Official Getverse Link (without icon) */}
+              <div className="flex justify-center sm:justify-end sm:w-28">
+                <a
+                  id="footer-telegram-link"
+                  href="https://t.me/GetVerse"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center px-4 py-2 rounded-full bg-[#0E1626]/90 hover:bg-[#132038] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-white transition-all text-xs font-black shadow-lg shadow-cyan-500/10 group cursor-pointer"
+                >
+                  <span>@Getverse</span>
+                </a>
+              </div>
+            </div>
+          </footer>
+        </div>
 
         {/* Toast Notifications */}
         <NotificationToast
@@ -286,57 +341,6 @@ export default function App() {
           onClose={() => setIsPinModalOpen(false)}
           onSuccess={handleAdminPinSuccess}
         />
-
-        {/* Footer with "Verse by Bitcoin.com", Admin Panel button, and @Getverse Telegram link */}
-        <footer className="border-t border-slate-800/80 bg-[#04060C] py-6 px-4">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <span className="font-bold text-slate-300 text-sm tracking-wide">
-                Verse by Bitcoin.com
-              </span>
-              <span className="text-slate-600 text-xs">|</span>
-
-              {/* Admin Panel Access Button */}
-              {currentView === 'admin' ? (
-                <button
-                  id="footer-back-home-btn"
-                  onClick={() => setCurrentView('home')}
-                  className="text-xs font-bold text-[#00E5FF] hover:underline cursor-pointer flex items-center gap-1.5"
-                >
-                  <span>Back to Home</span>
-                </button>
-              ) : (
-                <button
-                  id="footer-admin-panel-btn"
-                  onClick={handleAdminClick}
-                  className="text-xs font-bold text-slate-400 hover:text-[#00E5FF] transition-colors cursor-pointer flex items-center gap-1.5 group"
-                >
-                  <Lock size={12} className="text-slate-500 group-hover:text-[#00E5FF] transition-colors" />
-                  <span>Admin Panel</span>
-                </button>
-              )}
-            </div>
-
-            <a
-              id="footer-telegram-link"
-              href="https://t.me/GetVerse"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#0E1626] border border-cyan-500/30 hover:border-cyan-400 text-cyan-300 hover:text-white transition-all text-xs font-bold shadow-sm group cursor-pointer"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="16"
-                height="16"
-                fill="currentColor"
-                className="text-[#00E5FF] group-hover:scale-110 transition-transform"
-              >
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69.01-.03.01-.14-.07-.19-.08-.05-.19-.02-.27 0-.12.03-1.99 1.27-5.62 3.72-.53.36-1.01.54-1.44.53-.47-.01-1.38-.27-2.05-.49-.83-.27-1.49-.42-1.43-.88.03-.24.37-.49 1.02-.75 4-.1.74 6.68-2.9 8.04-3.48 3.84-1.63 4.64-1.91 5.16-1.92.11 0 .37.03.54.17.14.12.18.28.2.45-.02.07-.02.18-.03.28z" />
-              </svg>
-              <span>@Getverse</span>
-            </a>
-          </div>
-        </footer>
       </div>
     </WalletErrorBoundary>
   );

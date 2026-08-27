@@ -87,25 +87,29 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
       cleaned = '@' + cleaned;
     }
 
-    if (!account?.address) {
-      setErrorMsg('Please connect your Web3 wallet first to link your Telegram and wallet together');
-      return;
-    }
-
     setIsSubmitting(true);
     setErrorMsg(null);
     setSuccessMsg(null);
 
     try {
-      const profile = await registerUserApi(cleaned, account.address);
+      const profile = await registerUserApi(cleaned, account?.address || '');
       setSavedUsername(cleaned);
       localStorage.setItem('verse_telegram_username', cleaned);
       setUserProfile(profile);
       setIsEditing(false);
-      setSuccessMsg('Telegram username & wallet successfully connected and saved in the Admin Panel!');
-      if (onNotify) {
-        onNotify('Telegram Connected', `Linked ${cleaned} with ${account.address.slice(0, 6)}...${account.address.slice(-4)}`);
+
+      if (account?.address) {
+        setSuccessMsg('Username & Polygon wallet successfully linked in Admin Panel!');
+        if (onNotify) {
+          onNotify('Telegram & Wallet Linked', `Linked ${cleaned} with ${account.address.slice(0, 6)}...${account.address.slice(-4)}`);
+        }
+      } else {
+        setSuccessMsg('Username saved! Connect your Polygon wallet to link them together.');
+        if (onNotify) {
+          onNotify('Telegram Saved', `${cleaned} is registered. Connect your wallet to claim.`);
+        }
       }
+
       if (onProfileLoaded) {
         onProfileLoaded(profile);
       }
