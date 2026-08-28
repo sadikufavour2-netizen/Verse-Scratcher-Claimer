@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ConnectionStatus, WalletAccount, UserProfileResponse } from '../types';
 import { registerUserApi, getUserProfileApi } from '../services/apiService';
+import { detectTelegramUsername, saveTelegramUsername } from '../services/telegramService';
 import { PolygonBadge, VerseCoinLogo } from './VerseBrand';
 
 interface ConnectDashboardProps {
@@ -33,10 +34,10 @@ export const ConnectDashboard: React.FC<ConnectDashboardProps> = ({
   onNotify,
 }) => {
   const [telegramInput, setTelegramInput] = useState<string>(() => {
-    return localStorage.getItem('verse_telegram_username') || '';
+    return detectTelegramUsername();
   });
   const [savedUsername, setSavedUsername] = useState<string>(() => {
-    return localStorage.getItem('verse_telegram_username') || '';
+    return detectTelegramUsername();
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);

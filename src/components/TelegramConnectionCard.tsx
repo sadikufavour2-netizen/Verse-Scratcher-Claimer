@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { WalletAccount, UserProfileResponse } from '../types';
 import { registerUserApi, getUserProfileApi } from '../services/apiService';
+import { detectTelegramUsername, saveTelegramUsername } from '../services/telegramService';
 
 interface TelegramConnectionCardProps {
   account: WalletAccount | null;
@@ -27,10 +28,10 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
   onConnectWalletClick,
 }) => {
   const [telegramInput, setTelegramInput] = useState<string>(() => {
-    return localStorage.getItem('verse_telegram_username') || '';
+    return detectTelegramUsername();
   });
   const [savedUsername, setSavedUsername] = useState<string>(() => {
-    return localStorage.getItem('verse_telegram_username') || '';
+    return detectTelegramUsername();
   });
   const [isEditing, setIsEditing] = useState<boolean>(!savedUsername);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);

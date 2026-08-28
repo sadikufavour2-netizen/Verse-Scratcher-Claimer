@@ -2,6 +2,7 @@ import { WalletAccount, WalletType, POLYGON_MAINNET, ScratcherTicket, PrizeItem 
 
 let cachedProvider: any = null;
 let cachedAccount: WalletAccount | null = null;
+let cachedWalletConnectProvider: any = null;
 
 // User-specified WalletConnect Cloud Project ID
 export const DEFAULT_WALLETCONNECT_PROJECT_ID = '31ef6d708552677094488d29f5846014';
@@ -841,6 +842,14 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
   try {
     const { EthereumProvider } = await import('@walletconnect/ethereum-provider');
 
+    // Cleanly close prior instance if exists
+    if (cachedWalletConnectProvider) {
+      try {
+        await cachedWalletConnectProvider.disconnect();
+      } catch (e) {}
+      cachedWalletConnectProvider = null;
+    }
+
     const provider = await EthereumProvider.init({
       projectId,
       chains: [POLYGON_MAINNET.chainId],
@@ -861,6 +870,10 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
           '4622a2b2d6af1c9844944291e5e7351a6aa24cd7b23099efac1b2fd875da31a0',
           // Coinbase Wallet
           'fd20dc426fb3704baaa3500a455059a6f83dd512c8620fba0ae40b3f7f86016f',
+          // Rainbow
+          '1ae92b26df02f0ffd630422b539a38cd96ce0884d529a2ee6d0738234e7750f5',
+          // Zerion
+          'ecc4036f814562b41a5268adc86270fba136547114e0edc8977330b1830f9269',
         ],
       },
       metadata: {
@@ -881,6 +894,7 @@ export async function connectViaWalletConnect(): Promise<ConnectResult> {
     }
 
     cachedProvider = provider;
+    cachedWalletConnectProvider = provider;
     const userAddress = accounts[0];
 
     // Fetch real Polygon balances immediately after WalletConnect connects
@@ -955,6 +969,7 @@ export function getDetectedWalletInfo(): {
   isBrave: boolean;
   isRabby: boolean;
   isTrust: boolean;
+  isOkx: boolean;
   walletName: string;
 } {
   if (typeof window === 'undefined' || !(window as any).ethereum) {
@@ -965,6 +980,7 @@ export function getDetectedWalletInfo(): {
       isBrave: false,
       isRabby: false,
       isTrust: false,
+      isOkx: false,
       walletName: 'Browser Wallet',
     };
   }
@@ -975,6 +991,7 @@ export function getDetectedWalletInfo(): {
   const isBrave = Boolean((navigator as any).brave && eth.isBraveWallet);
   const isRabby = Boolean(eth.isRabby);
   const isTrust = Boolean(eth.isTrust || eth.isTrustWallet);
+  const isOkx = Boolean(eth.isOkxWallet || (window as any).okxwallet);
 
   let walletName = 'Browser Wallet';
   if (isRabby) walletName = 'Rabby Wallet';
@@ -982,6 +999,7 @@ export function getDetectedWalletInfo(): {
   else if (isCoinbase) walletName = 'Coinbase Wallet';
   else if (isBrave) walletName = 'Brave Wallet';
   else if (isTrust) walletName = 'Trust Wallet';
+  else if (isOkx) walletName = 'OKX Wallet';
 
   return {
     hasInjected: true,
@@ -990,6 +1008,7 @@ export function getDetectedWalletInfo(): {
     isBrave,
     isRabby,
     isTrust,
+    isOkx,
     walletName,
   };
 }
@@ -1002,7 +1021,7 @@ export async function connectInjectedWallet(targetWalletName?: string): Promise<
   if (typeof window === 'undefined' || !(window as any).ethereum) {
     return {
       success: false,
-      error: 'No Web3 browser wallet extension (like MetaMask, Rabby, or Coinbase Wallet) was found. Please open with a Web3 extension or use WalletConnect.',
+      error: 'No Web3 browser wallet extension found. Use WalletConnect to connect with QR code or mobile app.',
     };
   }
 
@@ -1011,18 +1030,25 @@ export async function connectInjectedWallet(targetWalletName?: string): Promise<
     // Handle multiple injected providers (e.g. both MetaMask and Coinbase installed)
     let provider = ethereum;
     if (ethereum.providers && Array.isArray(ethereum.providers)) {
-      if (targetWalletName?.toLowerCase().includes('metamask')) {
+      const lower = (targetWalletName || '').toLowerCase();
+      if (lower.includes('metamask')) {
         provider = ethereum.providers.find((p: any) => p.isMetaMask && !p.isRabby) || ethereum.providers[0];
-      } else if (targetWalletName?.toLowerCase().includes('coinbase')) {
+      } else if (lower.includes('coinbase')) {
         provider = ethereum.providers.find((p: any) => p.isCoinbaseWallet) || ethereum.providers[0];
-      } else if (targetWalletName?.toLowerCase().includes('rabby')) {
+      } else if (lower.includes('rabby')) {
         provider = ethereum.providers.find((p: any) => p.isRabby) || ethereum.providers[0];
+      } else if (lower.includes('trust')) {
+        provider = ethereum.providers.find((p: any) => p.isTrust || p.isTrustWallet) || ethereum.providers[0];
+      } else if (lower.includes('brave')) {
+        provider = ethereum.providers.find((p: any) => p.isBraveWallet) || ethereum.providers[0];
+      } else if (lower.includes('okx')) {
+        provider = ethereum.providers.find((p: any) => p.isOkxWallet) || (window as any).okxwallet || ethereum.providers[0];
       } else {
         provider = ethereum.providers[0];
       }
     }
 
-    // Request account access directly (this triggers the wallet extension popup!)
+    // Request account access directly (triggers the wallet extension popup)
     const accounts = await provider.request({ method: 'eth_requestAccounts' });
 
     if (!accounts || accounts.length === 0) {
@@ -1130,6 +1156,69 @@ export async function connectInjectedWallet(targetWalletName?: string): Promise<
 }
 
 /**
+ * Universal Web3 Connect for specific wallet selection
+ */
+export async function connectSpecificWeb3Wallet(walletId: string): Promise<ConnectResult> {
+  const detected = getDetectedWalletInfo();
+
+  if (walletId === 'walletconnect') {
+    return await connectViaWalletConnect();
+  }
+
+  if (walletId === 'bitcoincom') {
+    // If injected is available and user is in Bitcoin.com app browser
+    if (isInjectedWalletAvailable()) {
+      return await connectInjectedWallet('Bitcoin.com Wallet');
+    }
+    // Launch WalletConnect modal (which prioritizes Bitcoin.com Wallet)
+    return await connectViaWalletConnect();
+  }
+
+  if (walletId === 'metamask') {
+    if (detected.isMetaMask || isInjectedWalletAvailable()) {
+      return await connectInjectedWallet('MetaMask');
+    }
+    // If on mobile without extension, open via WalletConnect
+    return await connectViaWalletConnect();
+  }
+
+  if (walletId === 'coinbase') {
+    if (detected.isCoinbase || isInjectedWalletAvailable()) {
+      return await connectInjectedWallet('Coinbase Wallet');
+    }
+    return await connectViaWalletConnect();
+  }
+
+  if (walletId === 'trust') {
+    if (detected.isTrust || isInjectedWalletAvailable()) {
+      return await connectInjectedWallet('Trust Wallet');
+    }
+    return await connectViaWalletConnect();
+  }
+
+  if (walletId === 'rabby') {
+    if (detected.isRabby || isInjectedWalletAvailable()) {
+      return await connectInjectedWallet('Rabby Wallet');
+    }
+    return await connectInjectedWallet('Rabby Wallet');
+  }
+
+  if (walletId === 'brave') {
+    return await connectInjectedWallet('Brave Wallet');
+  }
+
+  if (walletId === 'okx') {
+    return await connectInjectedWallet('OKX Wallet');
+  }
+
+  // Fallback to direct injected or WalletConnect
+  if (isInjectedWalletAvailable()) {
+    return await connectInjectedWallet('Web3 Wallet');
+  }
+  return await connectViaWalletConnect();
+}
+
+/**
  * Connect with a custom Polygon / Ethereum Address (Ideal for Admins, cold wallets, multisigs)
  */
 export async function connectWithCustomAddress(
@@ -1217,11 +1306,22 @@ export async function switchToPolygon(currentAccount: WalletAccount): Promise<{ 
 
 /**
  * Disconnects the current wallet and removes cached state.
+ * Allows instant reconnection to another wallet without issues.
  */
 export async function disconnectWallet(type?: 'user' | 'admin'): Promise<void> {
   try {
-    if (cachedProvider && typeof cachedProvider.disconnect === 'function') {
-      await cachedProvider.disconnect();
+    if (cachedProvider) {
+      if (typeof cachedProvider.disconnect === 'function') {
+        await cachedProvider.disconnect().catch(() => {});
+      } else if (typeof cachedProvider.close === 'function') {
+        await cachedProvider.close().catch(() => {});
+      }
+    }
+    if (cachedWalletConnectProvider) {
+      try {
+        await cachedWalletConnectProvider.disconnect().catch(() => {});
+      } catch (e) {}
+      cachedWalletConnectProvider = null;
     }
   } catch (e) {
     console.warn('Error during disconnect:', e);
@@ -1230,6 +1330,9 @@ export async function disconnectWallet(type?: 'user' | 'admin'): Promise<void> {
     cachedAccount = null;
     if (type) {
       clearPersistedWallet(type);
+    } else {
+      clearPersistedWallet('user');
+      clearPersistedWallet('admin');
     }
   }
 }

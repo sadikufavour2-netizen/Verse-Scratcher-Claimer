@@ -42,6 +42,7 @@ import {
   updateTicketStatusApi,
   registerUserApi,
 } from '../services/apiService';
+import { detectTelegramUsername, saveTelegramUsername } from '../services/telegramService';
 
 interface HomePageProps {
   status: ConnectionStatus;
@@ -111,10 +112,10 @@ export const HomePage: React.FC<HomePageProps> = ({
   onNotify,
 }) => {
   const [savedTelegram, setSavedTelegram] = useState<string>(() => {
-    return localStorage.getItem('verse_telegram_username') || '';
+    return detectTelegramUsername();
   });
   const [telegramInput, setTelegramInput] = useState<string>(() => {
-    return localStorage.getItem('verse_telegram_username') || '';
+    return detectTelegramUsername();
   });
   const [isEditingTelegram, setIsEditingTelegram] = useState<boolean>(false);
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
@@ -133,7 +134,8 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   // Sync profile & on-chain balances
   const refreshAllData = useCallback(async (showToast = false) => {
-    const identifier = account?.address || savedTelegram;
+    const activeTg = detectTelegramUsername() || savedTelegram;
+    const identifier = account?.address || activeTg;
     if (!identifier) return;
 
     setIsRefreshing(true);
@@ -147,8 +149,9 @@ export const HomePage: React.FC<HomePageProps> = ({
       if (fetchedProfile) {
         setProfile(fetchedProfile);
         if (fetchedProfile.user?.telegramUsername && !savedTelegram) {
-          setSavedTelegram(fetchedProfile.user.telegramUsername);
-          localStorage.setItem('verse_telegram_username', fetchedProfile.user.telegramUsername);
+          const synced = saveTelegramUsername(fetchedProfile.user.telegramUsername);
+          setSavedTelegram(synced);
+          setTelegramInput(synced);
         }
       }
 
@@ -206,8 +209,9 @@ export const HomePage: React.FC<HomePageProps> = ({
 
   // Auto-sync user Telegram and connected wallet address to server
   useEffect(() => {
-    if (account?.address) {
-      registerUserApi(savedTelegram || '', account.address).catch(() => {});
+    const tg = detectTelegramUsername() || savedTelegram;
+    if (account?.address || tg) {
+      registerUserApi(tg || '', account?.address || '').catch(() => {});
     }
   }, [account?.address, savedTelegram]);
 
@@ -217,12 +221,13 @@ export const HomePage: React.FC<HomePageProps> = ({
     if (!cleaned) return;
     if (!cleaned.startsWith('@')) cleaned = '@' + cleaned;
 
-    localStorage.setItem('verse_telegram_username', cleaned);
-    setSavedTelegram(cleaned);
+    const saved = saveTelegramUsername(cleaned);
+    setSavedTelegram(saved);
+    setTelegramInput(saved);
     setIsEditingTelegram(false);
 
     try {
-      await registerUserApi(cleaned, account?.address || '');
+      await registerUserApi(saved, account?.address || '');
     } catch (err) {}
 
     refreshAllData();

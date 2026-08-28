@@ -10,16 +10,16 @@ import {
   disconnectWallet,
   savePersistedWallet,
   getPersistedWallet,
-  connectDirectWeb3Wallet,
+  connectViaWalletConnect,
   fetchRealBalances,
 } from './services/walletService';
 import { getUserProfileApi, registerUserApi } from './services/apiService';
+import { detectTelegramUsername } from './services/telegramService';
 import { WalletErrorBoundary } from './components/WalletErrorBoundary';
 import { Navbar } from './components/Navbar';
 import { HomePage } from './components/HomePage';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminPinModal } from './components/AdminPinModal';
-import { WalletConnectModal } from './components/WalletConnectModal';
 import { NotificationToast, ToastNotification } from './components/NotificationToast';
 import { Lock, Shield } from 'lucide-react';
 import verseScratcherBg from './assets/images/verse_scratcher_bg_1787859226217.jpg';
@@ -36,18 +36,18 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('DISCONNECTED');
   const [account, setAccount] = useState<WalletAccount | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isConnecting, setIsConnecting] = useState<boolean>(false);
   const [notifications, setNotifications] = useState<ToastNotification[]>([]);
   const [pendingApprovedCount, setPendingApprovedCount] = useState<number>(0);
 
-  // Auto-restore connected wallet session on page load / refresh
+  // Auto-restore connected wallet session on page load / refresh & detect Telegram context
   useEffect(() => {
+    const detectedTelegram = detectTelegramUsername();
     const persisted = getPersistedWallet('user');
-    const savedTelegram = localStorage.getItem('verse_telegram_username') || '';
 
     // Immediately register active user to admin database
-    if (persisted?.address || savedTelegram) {
-      registerUserApi(savedTelegram, persisted?.address || '').catch(() => {});
+    if (persisted?.address || detectedTelegram) {
+      registerUserApi(detectedTelegram, persisted?.address || '').catch(() => {});
     }
 
     if (persisted && persisted.address) {
@@ -78,22 +78,26 @@ export default function App() {
     }
   }, []);
 
-  // Triggered when clicking "CONNECT WALLET" in the page - directly launches Web3 wallet pop-up
+  // Triggered when clicking "CONNECT WALLET" in the page - directly launches official WalletConnect Web3 pop-up
   const handleOpenConnect = async () => {
     setErrorMessage(null);
+    setIsConnecting(true);
+
     try {
-      // Directly triggers the browser Web3 wallet extension (MetaMask/Rabby/Coinbase) or WalletConnect modal
-      const res = await connectDirectWeb3Wallet();
+      const res = await connectViaWalletConnect();
       if (res.success && res.account) {
         handleConnectSuccess(res.account);
       } else {
-        // If an issue or provider needs explicit selection, open the modal
         if (res.error && !res.error.toLowerCase().includes('user rejected') && !res.error.toLowerCase().includes('closed')) {
-          setIsModalOpen(true);
+          handleNotify('Wallet Connection', res.error);
         }
       }
-    } catch (e) {
-      setIsModalOpen(true);
+    } catch (err: any) {
+      if (err?.message && !err.message.toLowerCase().includes('user rejected') && !err.message.toLowerCase().includes('closed')) {
+        handleNotify('Connection Notice', err.message || 'Failed to connect Web3 wallet');
+      }
+    } finally {
+      setIsConnecting(false);
     }
   };
 
@@ -123,8 +127,8 @@ export default function App() {
 
   // Check pending approved allocations for active user
   const checkPendingAllocations = useCallback(async () => {
-    const savedTelegram = localStorage.getItem('verse_telegram_username');
-    const identifier = account?.address || savedTelegram;
+    const activeTelegram = detectTelegramUsername();
+    const identifier = account?.address || activeTelegram;
     if (!identifier) return;
 
     try {
@@ -147,10 +151,10 @@ export default function App() {
   const handleConnectSuccess = (connectedAccount: WalletAccount) => {
     setAccount(connectedAccount);
     savePersistedWallet('user', connectedAccount);
-    setIsModalOpen(false);
 
-    const savedTelegram = localStorage.getItem('verse_telegram_username') || '';
-    registerUserApi(savedTelegram, connectedAccount.address).catch(() => {});
+    const activeTelegram = detectTelegramUsername();
+    // Auto-register immediately with server so user appears in Admin Users directory
+    registerUserApi(activeTelegram, connectedAccount.address).catch(console.error);
 
     // Verify Polygon Mainnet (Chain ID 137)
     if (connectedAccount.chainId === POLYGON_MAINNET.chainId) {
@@ -335,14 +339,6 @@ export default function App() {
         <NotificationToast
           notifications={notifications}
           onDismiss={handleDismissNotification}
-        />
-
-        {/* Lazy Loaded Wallet Modal */}
-        <WalletConnectModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSuccess={handleConnectSuccess}
-          onError={handleConnectError}
         />
 
         {/* Admin PIN Modal */}
