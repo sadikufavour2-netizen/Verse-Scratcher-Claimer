@@ -32,6 +32,16 @@
       "totalAllocated": 0,
       "totalClaimed": 0,
       "pendingClaim": 0
+    },
+    "@alexverse": {
+      "id": "usr_1788010157931_487",
+      "telegramUsername": "@alexverse",
+      "walletAddress": "0x71C83637E4a6496660144f83F8C1625902B71337",
+      "registeredAt": "2026-08-29T13:29:17.931Z",
+      "lastActiveAt": "2026-08-29T13:29:17.931Z",
+      "totalAllocated": 0,
+      "totalClaimed": 0,
+      "pendingClaim": 0
     }
   },
   "allocations": [],

@@ -24,12 +24,14 @@ import {
 } from 'lucide-react';
 import {
   AdminOverviewResponse,
+  RegisteredUser,
   ScratcherTierType,
   WalletAccount,
   ScratcherTicket,
 } from '../types';
 import {
   getAdminOverviewApi,
+  getAdminUsersApi,
   batchAllocateApi,
   setAdminWalletApi,
 } from '../services/apiService';
@@ -61,6 +63,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Dedicated Users Directory State (Completely Independent of admin_overview)
+  const [usersList, setUsersList] = useState<RegisteredUser[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(true);
+  const [isRefreshingUsers, setIsRefreshingUsers] = useState(false);
+  const [usersError, setUsersError] = useState<string | null>(null);
+
   const [adminOnChainNfts, setAdminOnChainNfts] = useState<ScratcherTicket[]>([]);
   const [isLoadingNfts, setIsLoadingNfts] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -102,22 +111,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Direct Database Query for Registered Telegram & Wallet Users
+  const fetchUsersDirectory = async (showLoading = true) => {
+    if (showLoading) setIsLoadingUsers(true);
+    setIsRefreshingUsers(true);
+    try {
+      const res = await getAdminUsersApi();
+      console.log(`[Admin Users Directory] Direct API fetched ${res.users.length} production users:`, res.users);
+      setUsersList(res.users || []);
+      setUsersError(null);
+    } catch (err: any) {
+      const errMsg = err?.message || 'Failed to query users database';
+      console.error('[Admin Users Directory Error] Failed to load users:', err);
+      setUsersError(errMsg);
+    } finally {
+      setIsLoadingUsers(false);
+      setIsRefreshingUsers(false);
+    }
+  };
+
   const fetchOverview = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
     setIsRefreshing(true);
     try {
       const res = await getAdminOverviewApi();
-      console.log(`[Admin Users Sync] Successfully queried production database:`, {
-        registeredUsersCount: res?.users?.length || 0,
-        users: res?.users,
-        allocationsCount: res?.allocations?.length || 0,
-        claimsCount: res?.claims?.length || 0,
-      });
       setData(res);
       setFetchError(null);
     } catch (err: any) {
-      const errMsg = err?.message || 'Failed to load users from production database';
-      console.error('[Admin Users Sync Error] Failed to query database overview:', err);
+      const errMsg = err?.message || 'Failed to load admin overview';
+      console.error('[Admin Overview Error]:', err);
       setFetchError(errMsg);
     } finally {
       setIsLoading(false);
@@ -166,8 +188,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   }, []);
 
   useEffect(() => {
-    fetchOverview();
-    const interval = setInterval(() => fetchOverview(false), 8000);
+    fetchUsersDirectory(true);
+    fetchOverview(true);
+    const interval = setInterval(() => {
+      fetchUsersDirectory(false);
+      fetchOverview(false);
+    }, 6000);
     return () => clearInterval(interval);
   }, []);
 
@@ -600,7 +626,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           <Users size={14} />
-          Connected Users &amp; Wallets ({(data?.users || []).length})
+          Connected Users &amp; Wallets ({usersList.length})
         </button>
 
         <button
@@ -655,18 +681,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* TAB 0: Connected Users & Wallets */}
       {activeTab === 'users' && (
         <div className="space-y-6">
-          {/* Explicit Database Query Error Banner if fetch fails */}
-          {fetchError && (
+          {/* Explicit Database Query Error Banner if users fetch fails */}
+          {usersError && (
             <div className="p-4 rounded-2xl bg-red-950/50 border border-red-500/50 text-red-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-red-950/50">
               <div className="flex items-center gap-3">
                 <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
                 <div>
                   <div className="font-bold text-red-200">Database Connection Error</div>
-                  <div className="text-red-300/90 font-mono text-[11px]">Failed to load users: {fetchError}</div>
+                  <div className="text-red-300/90 font-mono text-[11px]">Failed to load users: {usersError}</div>
                 </div>
               </div>
               <button
-                onClick={() => fetchOverview(true)}
+                onClick={() => fetchUsersDirectory(true)}
                 className="px-4 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-white font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 shrink-0 transition-all"
               >
                 <RefreshCw size={13} />
@@ -699,22 +725,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </div>
 
               <button
-                onClick={() => fetchOverview(true)}
-                disabled={isRefreshing}
+                onClick={() => fetchUsersDirectory(true)}
+                disabled={isRefreshingUsers}
                 className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all"
               >
-                <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-[#00E5FF]' : ''} />
+                <RefreshCw size={13} className={isRefreshingUsers ? 'animate-spin text-[#00E5FF]' : ''} />
                 <span>Refresh</span>
               </button>
 
               <span className="px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-[#00E5FF] text-xs font-bold font-mono">
-                {(data?.users || []).length} Registered Users
+                {usersList.length} Registered Users
               </span>
             </div>
           </div>
 
           {(() => {
-            const allUsers = data?.users || [];
+            const allUsers = usersList;
             const filteredUsers = allUsers.filter((u) => {
               if (!searchQuery.trim()) return true;
               const q = searchQuery.toLowerCase().trim();
@@ -1368,7 +1394,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </label>
                       {(() => {
                         const cleanHandle = singleUsername.trim().toLowerCase();
-                        const matchedUser = (data?.users || []).find(
+                        const matchedUser = (usersList.length > 0 ? usersList : data?.users || []).find(
                           (u) =>
                             u.telegramUsername &&
                             u.telegramUsername.toLowerCase().replace(/^@/, '') === cleanHandle.replace(/^@/, '')
