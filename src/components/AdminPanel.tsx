@@ -60,6 +60,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [adminConnectError, setAdminConnectError] = useState<string | null>(null);
 
   const [data, setData] = useState<AdminOverviewResponse | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [adminOnChainNfts, setAdminOnChainNfts] = useState<ScratcherTicket[]>([]);
   const [isLoadingNfts, setIsLoadingNfts] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -106,9 +107,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setIsRefreshing(true);
     try {
       const res = await getAdminOverviewApi();
+      console.log(`[Admin Users Sync] Successfully queried production database:`, {
+        registeredUsersCount: res?.users?.length || 0,
+        users: res?.users,
+        allocationsCount: res?.allocations?.length || 0,
+        claimsCount: res?.claims?.length || 0,
+      });
       setData(res);
+      setFetchError(null);
     } catch (err: any) {
-      console.error('Failed to load admin overview:', err);
+      const errMsg = err?.message || 'Failed to load users from production database';
+      console.error('[Admin Users Sync Error] Failed to query database overview:', err);
+      setFetchError(errMsg);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -645,6 +655,26 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       {/* TAB 0: Connected Users & Wallets */}
       {activeTab === 'users' && (
         <div className="space-y-6">
+          {/* Explicit Database Query Error Banner if fetch fails */}
+          {fetchError && (
+            <div className="p-4 rounded-2xl bg-red-950/50 border border-red-500/50 text-red-300 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-red-950/50">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                <div>
+                  <div className="font-bold text-red-200">Database Connection Error</div>
+                  <div className="text-red-300/90 font-mono text-[11px]">Failed to load users: {fetchError}</div>
+                </div>
+              </div>
+              <button
+                onClick={() => fetchOverview(true)}
+                className="px-4 py-2 rounded-xl bg-red-800 hover:bg-red-700 text-white font-bold text-xs cursor-pointer flex items-center justify-center gap-1.5 shrink-0 transition-all"
+              >
+                <RefreshCw size={13} />
+                <span>Retry Database Query</span>
+              </button>
+            </div>
+          )}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-[#080E1C] border border-slate-800">
             <div>
               <h3 className="text-lg font-black text-white tracking-tight flex items-center gap-2">

@@ -12,7 +12,28 @@
       "mini": 3000
     }
   },
-  "users": {},
+  "users": {
+    "@johncrypto": {
+      "id": "usr_1788009078730_739",
+      "telegramUsername": "@johncrypto",
+      "walletAddress": "0x1234567890123456789012345678901234567890",
+      "registeredAt": "2026-08-29T13:11:18.730Z",
+      "lastActiveAt": "2026-08-29T13:11:18.730Z",
+      "totalAllocated": 0,
+      "totalClaimed": 0,
+      "pendingClaim": 0
+    },
+    "@marybtc": {
+      "id": "usr_1788009231143_397",
+      "telegramUsername": "@marybtc",
+      "walletAddress": "0x567890123456789012345678901234567890efgh",
+      "registeredAt": "2026-08-29T13:13:51.143Z",
+      "lastActiveAt": "2026-08-29T13:13:51.143Z",
+      "totalAllocated": 0,
+      "totalClaimed": 0,
+      "pendingClaim": 0
+    }
+  },
   "allocations": [],
   "claims": [],
   "userTickets": {}

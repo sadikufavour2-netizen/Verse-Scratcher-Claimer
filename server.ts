@@ -115,17 +115,63 @@ function loadDatabase(): DatabaseState {
     if (fs.existsSync(DATA_FILE)) {
       const content = fs.readFileSync(DATA_FILE, "utf-8");
       const parsed = JSON.parse(content);
+
+      // Handle users map or array gracefully
+      const usersMap: Record<string, StoredRegisteredUser> = {};
+      if (Array.isArray(parsed.users)) {
+        parsed.users.forEach((u: any, idx: number) => {
+          if (u && typeof u === "object") {
+            const tg = normalizeTelegram(u.telegramUsername);
+            const addr = normalizeAddress(u.walletAddress);
+            const key = tg || addr || u.id || `usr_${idx}`;
+            usersMap[key] = {
+              id: u.id || `usr_${Date.now()}_${idx}`,
+              telegramUsername: u.telegramUsername || "",
+              walletAddress: u.walletAddress || "",
+              registeredAt: u.registeredAt || new Date().toISOString(),
+              lastActiveAt: u.lastActiveAt || new Date().toISOString(),
+              totalAllocated: Number(u.totalAllocated) || 0,
+              totalClaimed: Number(u.totalClaimed) || 0,
+              pendingClaim: Number(u.pendingClaim) || 0,
+            };
+          }
+        });
+      } else if (parsed.users && typeof parsed.users === "object") {
+        Object.entries(parsed.users).forEach(([k, u]: [string, any]) => {
+          if (u && typeof u === "object") {
+            const tg = normalizeTelegram(u.telegramUsername);
+            const addr = normalizeAddress(u.walletAddress);
+            const key = tg || addr || k || u.id;
+            usersMap[key] = {
+              id: u.id || `usr_${Date.now()}`,
+              telegramUsername: u.telegramUsername || "",
+              walletAddress: u.walletAddress || "",
+              registeredAt: u.registeredAt || new Date().toISOString(),
+              lastActiveAt: u.lastActiveAt || new Date().toISOString(),
+              totalAllocated: Number(u.totalAllocated) || 0,
+              totalClaimed: Number(u.totalClaimed) || 0,
+              pendingClaim: Number(u.pendingClaim) || 0,
+            };
+          }
+        });
+      }
+
+      console.log(`[Database Loaded] Loaded ${Object.keys(usersMap).length} registered users from ${DATA_FILE}`);
+
       return {
         adminWallet: parsed.adminWallet || null,
         vaultInventory: parsed.vaultInventory || INITIAL_STATE.vaultInventory,
-        users: parsed.users || {},
-        allocations: parsed.allocations || [],
-        claims: parsed.claims || [],
-        userTickets: parsed.userTickets || {},
+        users: usersMap,
+        allocations: Array.isArray(parsed.allocations) ? parsed.allocations : [],
+        claims: Array.isArray(parsed.claims) ? parsed.claims : [],
+        userTickets:
+          parsed.userTickets && typeof parsed.userTickets === "object" && !Array.isArray(parsed.userTickets)
+            ? parsed.userTickets
+            : {},
       };
     }
   } catch (err) {
-    console.error("Error reading database file, using memory fallback:", err);
+    console.error("[Database Error] Error reading database file, using fallback:", err);
   }
   return JSON.parse(JSON.stringify(INITIAL_STATE));
 }
@@ -139,7 +185,7 @@ function saveDatabase() {
     }
     fs.writeFileSync(DATA_FILE, JSON.stringify(dbState, null, 2), "utf-8");
   } catch (err) {
-    console.error("Error writing database file:", err);
+    console.error("[Database Error] Error writing database file:", err);
   }
 }
 
@@ -389,6 +435,7 @@ async function startServer() {
     }
 
     const user = findOrCreateUser(telegramUsername || "", walletAddress || "");
+    console.log(`[User Registered/Updated] TG: "${user.telegramUsername}" | Wallet: "${user.walletAddress}" | ID: ${user.id} | Total DB Users: ${Object.keys(dbState.users).length}`);
 
     const normTelegram = normalizeTelegram(user.telegramUsername);
     const normAddress = normalizeAddress(user.walletAddress);
@@ -611,25 +658,37 @@ async function startServer() {
 
   // API 5: Admin Overview (Dashboard, Inventory, Users, Allocations, Claims)
   app.get("/api/admin/overview", (req, res) => {
-    const usersList = getConsolidatedUsers();
+    try {
+      const usersList = getConsolidatedUsers();
+      console.log(`[Admin Query /api/admin/overview] Returned ${usersList.length} users from database`);
 
-    res.json({
-      inventory: dbState.vaultInventory,
-      users: usersList,
-      allocations: dbState.allocations,
-      claims: dbState.claims,
-      adminWallet: dbState.adminWallet,
-    });
+      res.json({
+        inventory: dbState.vaultInventory,
+        users: usersList,
+        allocations: dbState.allocations,
+        claims: dbState.claims,
+        adminWallet: dbState.adminWallet,
+      });
+    } catch (err: any) {
+      console.error("[Admin Query Error] /api/admin/overview:", err);
+      res.status(500).json({ error: err.message || "Failed to query database overview" });
+    }
   });
 
   // API 5B: Dedicated Admin Users Endpoint
   app.get("/api/admin/users", (req, res) => {
-    const usersList = getConsolidatedUsers();
-    res.json({
-      success: true,
-      total: usersList.length,
-      users: usersList,
-    });
+    try {
+      const usersList = getConsolidatedUsers();
+      console.log(`[Admin Query /api/admin/users] Returned ${usersList.length} users from database`);
+      res.json({
+        success: true,
+        total: usersList.length,
+        users: usersList,
+      });
+    } catch (err: any) {
+      console.error("[Admin Query Error] /api/admin/users:", err);
+      res.status(500).json({ error: err.message || "Failed to query database users" });
+    }
   });
 
   // API 6: Admin Connects / Sets Wallet
