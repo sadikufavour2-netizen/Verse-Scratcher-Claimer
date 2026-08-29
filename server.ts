@@ -311,7 +311,7 @@ async function startServer() {
   });
 
   // Helper to find and merge user records without creating duplicates
-  function findOrCreateUser(telegram: string, address: string): StoredRegisteredUser {
+  function findOrCreateUser(telegram: string | null | undefined, address: string | null | undefined): StoredRegisteredUser {
     const rawTelegram = telegram ? telegram.trim() : "";
     const rawAddress = address ? address.trim() : "";
     const normTelegram = normalizeTelegram(rawTelegram);
@@ -333,7 +333,8 @@ async function startServer() {
 
       let bestTelegram = rawTelegram || base.telegramUsername || "";
       if (bestTelegram && !bestTelegram.startsWith("@")) bestTelegram = "@" + bestTelegram;
-      let bestAddress = rawAddress || base.walletAddress || "";
+      let bestAddress = rawAddress || base.walletAddress || null;
+      if (bestAddress === "") bestAddress = null;
       let earliestRegisteredAt = base.registeredAt || new Date().toISOString();
       let totalAlloc = base.totalAllocated || 0;
       let totalClaim = base.totalClaimed || 0;
@@ -375,7 +376,7 @@ async function startServer() {
       };
 
       // Keep key standardized
-      const standardKey = normalizeTelegram(bestTelegram) || normalizeAddress(bestAddress) || firstKey;
+      const standardKey = normalizeTelegram(bestTelegram) || (bestAddress ? normalizeAddress(bestAddress) : "") || firstKey;
       if (standardKey !== firstKey) {
         delete dbState.users[firstKey];
       }
@@ -383,7 +384,7 @@ async function startServer() {
     } else {
       let finalTg = rawTelegram;
       if (finalTg && !finalTg.startsWith("@")) finalTg = "@" + finalTg;
-      const finalAddr = rawAddress;
+      const finalAddr = rawAddress || null;
       const id = `usr_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
 
       // Calculate any pre-existing allocations for this handle/address
@@ -408,7 +409,7 @@ async function startServer() {
         pendingClaim: actualPending,
       };
 
-      const primaryKey = normalizeTelegram(finalTg) || normalizeAddress(finalAddr) || id;
+      const primaryKey = normalizeTelegram(finalTg) || (finalAddr ? normalizeAddress(finalAddr) : "") || id;
       dbState.users[primaryKey] = mergedUser;
     }
 
@@ -429,33 +430,45 @@ async function startServer() {
 
   // API 2: Register / Connect User (Telegram + Wallet Address)
   app.post("/api/users/register", (req, res) => {
-    const { telegramUsername, walletAddress } = req.body;
-    if (!telegramUsername && !walletAddress) {
-      return res.status(400).json({ error: "Telegram username or wallet address is required" });
+    try {
+      const { telegramUsername, walletAddress } = req.body;
+      if (!telegramUsername && !walletAddress) {
+        return res.status(400).json({ error: "Telegram username or wallet address is required" });
+      }
+
+      if (telegramUsername) {
+        console.log(`[USER SAVE ACTION] telegram username = "${telegramUsername}"`);
+      }
+      if (walletAddress) {
+        console.log(`[USER WALLET ACTION] wallet address = "${walletAddress}"`);
+      }
+
+      const user = findOrCreateUser(telegramUsername || "", walletAddress || "");
+      console.log(`[RECORD PERSISTED] telegram_username -> "${user.telegramUsername}" | wallet_address -> ${user.walletAddress ? `"${user.walletAddress}"` : "null"} | id -> "${user.id}"`);
+
+      const normTelegram = normalizeTelegram(user.telegramUsername);
+      const normAddress = user.walletAddress ? normalizeAddress(user.walletAddress) : "";
+
+      const pendingAllocations = dbState.allocations.filter(
+        (a) =>
+          ((normTelegram && normalizeTelegram(a.telegramUsername) === normTelegram) ||
+            (normAddress && normalizeAddress(a.walletAddress) === normAddress)) &&
+          a.status === "APPROVED"
+      );
+
+      const activeScratchers = normAddress ? dbState.userTickets[normAddress] || [] : [];
+
+      res.json({
+        success: true,
+        user,
+        pendingAllocations,
+        claimableScratchersCount: user.pendingClaim,
+        activeScratchers,
+      });
+    } catch (err: any) {
+      console.error("[User Register Error]:", err);
+      res.status(500).json({ error: err.message || "Failed to persist user in database" });
     }
-
-    const user = findOrCreateUser(telegramUsername || "", walletAddress || "");
-    console.log(`[User Registered/Updated] TG: "${user.telegramUsername}" | Wallet: "${user.walletAddress}" | ID: ${user.id} | Total DB Users: ${Object.keys(dbState.users).length}`);
-
-    const normTelegram = normalizeTelegram(user.telegramUsername);
-    const normAddress = normalizeAddress(user.walletAddress);
-
-    const pendingAllocations = dbState.allocations.filter(
-      (a) =>
-        ((normTelegram && normalizeTelegram(a.telegramUsername) === normTelegram) ||
-          (normAddress && normalizeAddress(a.walletAddress) === normAddress)) &&
-        a.status === "APPROVED"
-    );
-
-    const activeScratchers = normAddress ? dbState.userTickets[normAddress] || [] : [];
-
-    res.json({
-      success: true,
-      user,
-      pendingAllocations,
-      claimableScratchersCount: user.pendingClaim,
-      activeScratchers,
-    });
   });
 
   // API 3: Get User Profile & Allocations

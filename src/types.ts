@@ -59,7 +59,7 @@ export interface ScratcherTicket {
 export interface RegisteredUser {
   id: string;
   telegramUsername: string; // e.g. "@username"
-  walletAddress: string; // EVM address
+  walletAddress: string | null; // EVM address or null if not yet connected
   registeredAt: string;
   lastActiveAt: string;
   totalAllocated: number;
@@ -114,6 +114,7 @@ export interface AdminOverviewResponse {
 }
 
 export interface UserProfileResponse {
+  success?: boolean;
   user: RegisteredUser | null;
   pendingAllocations: AllocationRecord[];
   allocations?: AllocationRecord[];

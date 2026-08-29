@@ -39,6 +39,8 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [justSaved, setJustSaved] = useState<boolean>(false);
+
   // Sync profile from backend whenever wallet or saved username changes
   const fetchProfile = async (identifier: string) => {
     if (!identifier) return;
@@ -91,31 +93,44 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
     setIsSubmitting(true);
     setErrorMsg(null);
     setSuccessMsg(null);
+    setJustSaved(false);
 
     try {
+      // 3. The SAVE button sends the username to the backend/API
       const profile = await registerUserApi(cleaned, account?.address || '');
-      setSavedUsername(cleaned);
-      localStorage.setItem('verse_telegram_username', cleaned);
-      setUserProfile(profile);
-      setIsEditing(false);
+      
+      // 4. Backend confirmed persistence
+      if (!profile || !profile.success || !profile.user) {
+        throw new Error('Database did not return a confirmed user record');
+      }
 
-      if (account?.address) {
-        setSuccessMsg('Username & Polygon wallet successfully linked in Admin Panel!');
+      setSavedUsername(profile.user.telegramUsername || cleaned);
+      localStorage.setItem('verse_telegram_username', profile.user.telegramUsername || cleaned);
+      setUserProfile(profile);
+      setJustSaved(true);
+
+      if (profile.user.walletAddress) {
+        setSuccessMsg(`Saved to database: ${profile.user.telegramUsername} linked with wallet ${profile.user.walletAddress.slice(0, 6)}...${profile.user.walletAddress.slice(-4)}`);
         if (onNotify) {
-          onNotify('Telegram & Wallet Linked', `Linked ${cleaned} with ${account.address.slice(0, 6)}...${account.address.slice(-4)}`);
+          onNotify('Telegram & Wallet Saved', `Persisted ${profile.user.telegramUsername} and wallet to production database.`);
         }
       } else {
-        setSuccessMsg('Username saved! Connect your Polygon wallet to link them together.');
+        setSuccessMsg(`Saved to database: ${profile.user.telegramUsername}. Wallet address is currently null until connected.`);
         if (onNotify) {
-          onNotify('Telegram Saved', `${cleaned} is registered. Connect your wallet to claim.`);
+          onNotify('Username Saved to Database', `${profile.user.telegramUsername} recorded in database. Connect your wallet to complete linkage.`);
         }
       }
 
       if (onProfileLoaded) {
         onProfileLoaded(profile);
       }
+
+      setTimeout(() => {
+        setIsEditing(false);
+        setJustSaved(false);
+      }, 1200);
     } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to register Telegram username');
+      setErrorMsg(err.message || 'Failed to save username to database');
     } finally {
       setIsSubmitting(false);
     }
@@ -138,15 +153,15 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
               <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
                 TELEGRAM &amp; WALLET SYNC
               </h3>
-              {savedUsername && account?.address && (
+              {savedUsername && (
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/10 text-emerald-300 text-[10px] font-black border border-emerald-400/30 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  STORED AT ADMIN
+                  PERSISTED IN DATABASE
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-400">
-              Connect your Telegram handle to receive approved scratcher allocations from the admin
+              Save your Telegram handle to receive approved scratcher allocations from the admin
             </p>
           </div>
         </div>
@@ -193,7 +208,7 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
               </span>
               <input
                 type="text"
-                placeholder="your_telegram_username (e.g. zionoluchi)"
+                placeholder="your_telegram_username (e.g. testuser123)"
                 value={telegramInput.startsWith('@') ? telegramInput.slice(1) : telegramInput}
                 onChange={(e) => setTelegramInput('@' + e.target.value.replace(/^@/, ''))}
                 className="w-full pl-8 pr-4 py-2.5 rounded-2xl bg-[#040813] border border-cyan-500/30 text-xs sm:text-sm font-mono text-white placeholder-slate-500 focus:border-[#00E5FF] focus:outline-none transition-colors"
@@ -204,18 +219,27 @@ export const TelegramConnectionCard: React.FC<TelegramConnectionCardProps> = ({
               <button
                 id="save-telegram-btn"
                 type="submit"
-                disabled={isSubmitting || !telegramInput.trim()}
-                className="w-full sm:w-auto px-6 py-2.5 rounded-2xl bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg shadow-cyan-500/20 hover:brightness-110 disabled:opacity-50 transition-all cursor-pointer"
+                disabled={isSubmitting || !telegramInput.trim() || justSaved}
+                className={`w-full sm:w-auto px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-lg transition-all cursor-pointer ${
+                  justSaved
+                    ? 'bg-emerald-400 text-black shadow-emerald-500/20'
+                    : 'bg-gradient-to-r from-[#00E5FF] to-[#0099FF] text-black shadow-cyan-500/20 hover:brightness-110 disabled:opacity-50'
+                }`}
               >
                 {isSubmitting ? (
                   <>
                     <RefreshCw size={14} className="animate-spin" />
                     <span>Saving...</span>
                   </>
+                ) : justSaved ? (
+                  <>
+                    <CheckCircle2 size={16} />
+                    <span>Saved</span>
+                  </>
                 ) : (
                   <>
                     <ShieldCheck size={16} />
-                    <span>Link &amp; Save in Admin</span>
+                    <span>SAVE</span>
                   </>
                 )}
               </button>

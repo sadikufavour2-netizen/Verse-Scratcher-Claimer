@@ -52,6 +52,16 @@
       "totalAllocated": 0,
       "totalClaimed": 0,
       "pendingClaim": 0
+    },
+    "@testuser123": {
+      "id": "usr_1788024172311_662",
+      "telegramUsername": "@testuser123",
+      "walletAddress": "0x1234567890abcdef1234567890abcdef12345678",
+      "registeredAt": "2026-08-29T17:22:52.311Z",
+      "lastActiveAt": "2026-08-29T17:22:56.413Z",
+      "totalAllocated": 0,
+      "totalClaimed": 0,
+      "pendingClaim": 0
     }
   },
   "allocations": [],
