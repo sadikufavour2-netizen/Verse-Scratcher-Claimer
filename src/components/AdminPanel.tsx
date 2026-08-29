@@ -30,7 +30,7 @@ import {
   ScratcherTicket,
 } from '../types';
 import {
-  getAdminOverviewApi,
+  getAdminStatsApi,
   getAdminUsersApi,
   batchAllocateApi,
   setAdminWalletApi,
@@ -61,10 +61,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isConnectingAdminWallet, setIsConnectingAdminWallet] = useState(false);
   const [adminConnectError, setAdminConnectError] = useState<string | null>(null);
 
-  const [data, setData] = useState<AdminOverviewResponse | null>(null);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [statsData, setStatsData] = useState<{
+    inventory: any;
+    allocations: any[];
+    claims: any[];
+    adminWallet: string | null;
+  } | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
-  // Dedicated Users Directory State (Completely Independent of admin_overview)
+  // Dedicated Users Directory State (Completely Independent)
   const [usersList, setUsersList] = useState<RegisteredUser[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(true);
   const [isRefreshingUsers, setIsRefreshingUsers] = useState(false);
@@ -72,8 +77,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const [adminOnChainNfts, setAdminOnChainNfts] = useState<ScratcherTicket[]>([]);
   const [isLoadingNfts, setIsLoadingNfts] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [isRefreshingStats, setIsRefreshingStats] = useState(false);
 
   // Send NFT Scratchers form state (Batch Tab)
   const [rawInput, setRawInput] = useState<string>('');
@@ -130,20 +135,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const fetchOverview = async (showLoading = true) => {
-    if (showLoading) setIsLoading(true);
-    setIsRefreshing(true);
+  const fetchStats = async (showLoading = true) => {
+    if (showLoading) setIsLoadingStats(true);
+    setIsRefreshingStats(true);
     try {
-      const res = await getAdminOverviewApi();
-      setData(res);
-      setFetchError(null);
+      const res = await getAdminStatsApi();
+      setStatsData({
+        inventory: res.inventory,
+        allocations: res.allocations,
+        claims: res.claims,
+        adminWallet: res.adminWallet,
+      });
+      setStatsError(null);
     } catch (err: any) {
-      const errMsg = err?.message || 'Failed to load admin overview';
-      console.error('[Admin Overview Error]:', err);
-      setFetchError(errMsg);
+      const errMsg = err?.message || 'Failed to load admin stats';
+      console.error('[Admin Stats Error]:', err);
+      setStatsError(errMsg);
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      setIsLoadingStats(false);
+      setIsRefreshingStats(false);
     }
   };
 
@@ -189,10 +199,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   useEffect(() => {
     fetchUsersDirectory(true);
-    fetchOverview(true);
+    fetchStats(true);
     const interval = setInterval(() => {
       fetchUsersDirectory(false);
-      fetchOverview(false);
+      fetchStats(false);
     }, 6000);
     return () => clearInterval(interval);
   }, []);
@@ -318,7 +328,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         onNotify('NFT Scratchers Dispatched', res.message);
       }
       setRawInput('');
-      fetchOverview(false);
+      fetchStats(false);
     } catch (err: any) {
       setAllocationErrorMsg(err.message || 'Failed to send scratchers');
     } finally {
@@ -359,7 +369,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onNotify('NFT Scratcher Sent', `Sent ${count} ${selectedNftForSend.title} to ${cleaned}`);
         }
         setSingleUsername('');
-        fetchOverview(false);
+        fetchStats(false);
         setTimeout(() => {
           setSelectedNftForSend(null);
           setModalSuccess(null);
@@ -389,7 +399,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           onNotify('NFT Scratchers Sent', res.message);
         }
         setModalBatchInput('');
-        fetchOverview(false);
+        fetchStats(false);
         setTimeout(() => {
           setSelectedNftForSend(null);
           setModalSuccess(null);
@@ -402,20 +412,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
-  const availableInVault = data?.inventory
-    ? Math.max(0, data.inventory.totalInVault - data.inventory.allocatedCount - data.inventory.claimedCount)
+  const availableInVault = statsData?.inventory
+    ? Math.max(0, statsData.inventory.totalInVault - statsData.inventory.allocatedCount - statsData.inventory.claimedCount)
     : 0;
 
   // Filter records by Telegram username
-  const filteredAllocations = (data?.allocations || []).filter((alloc) =>
+  const filteredAllocations = (statsData?.allocations || []).filter((alloc) =>
     alloc.telegramUsername.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const filteredClaims = (data?.claims || []).filter((claim) =>
+  const filteredClaims = (statsData?.claims || []).filter((claim) =>
     claim.telegramUsername.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const totalNftsAvailable = (data?.inventory?.totalInVault || 0) + adminOnChainNfts.length;
+  const totalNftsAvailable = (statsData?.inventory?.totalInVault || 0) + adminOnChainNfts.length;
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-8 px-4 sm:px-6 py-8 text-slate-200">
@@ -456,14 +466,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
             <button
               onClick={() => {
-                fetchOverview(true);
+                fetchStats(true);
+                fetchUsersDirectory(true);
                 if (adminAccount?.address) fetchAdminWalletData(adminAccount.address);
               }}
-              disabled={isRefreshing}
+              disabled={isRefreshingStats}
               className="p-2.5 rounded-2xl bg-[#0E172A] hover:bg-[#14203B] border border-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer"
               title="Refresh Admin Overview"
             >
-              <RefreshCw size={16} className={isRefreshing ? 'animate-spin text-[#00E5FF]' : ''} />
+              <RefreshCw size={16} className={isRefreshingStats ? 'animate-spin text-[#00E5FF]' : ''} />
             </button>
           </div>
         </div>
@@ -579,7 +590,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </span>
           </div>
           <div className="text-3xl font-black text-amber-300 tracking-tight">
-            {(data?.inventory.allocatedCount || 0).toLocaleString()}
+            {(statsData?.inventory?.allocatedCount || 0).toLocaleString()}
           </div>
           <span className="text-[11px] text-slate-400 font-medium">Waiting for User Claim</span>
         </div>
@@ -594,7 +605,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
           </div>
           <div className="text-3xl font-black text-emerald-400 tracking-tight">
-            {(data?.inventory.claimedCount || 0).toLocaleString()}
+            {(statsData?.inventory?.claimedCount || 0).toLocaleString()}
           </div>
           <span className="text-[11px] text-slate-400 font-medium">Delivered to Users</span>
         </div>
@@ -609,7 +620,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             <span className="text-xs font-bold text-purple-300">Live</span>
           </div>
           <div className="text-3xl font-black text-purple-300 tracking-tight">
-            {(data?.allocations || []).length}
+            {(statsData?.allocations || []).length}
           </div>
           <span className="text-[11px] text-slate-400 font-medium">Dispatched Records</span>
         </div>
@@ -662,7 +673,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           <Layers size={14} />
-          Dispatched Records ({(data?.allocations || []).length})
+          Dispatched Records ({(statsData?.allocations || []).length})
         </button>
 
         <button
@@ -674,7 +685,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           }`}
         >
           <CheckCircle2 size={14} />
-          Claim Logs ({(data?.claims || []).length})
+          Claim Logs ({(statsData?.claims || []).length})
         </button>
       </div>
 
@@ -1280,7 +1291,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </p>
             </div>
             <span className="text-xs text-slate-400 font-bold">
-              Total Claims: {data?.claims.length || 0}
+              Total Claims: {statsData?.claims.length || 0}
             </span>
           </div>
 
@@ -1394,7 +1405,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                       </label>
                       {(() => {
                         const cleanHandle = singleUsername.trim().toLowerCase();
-                        const matchedUser = (usersList.length > 0 ? usersList : data?.users || []).find(
+                        const matchedUser = usersList.find(
                           (u) =>
                             u.telegramUsername &&
                             u.telegramUsername.toLowerCase().replace(/^@/, '') === cleanHandle.replace(/^@/, '')

@@ -656,22 +656,19 @@ async function startServer() {
       .sort((a, b) => new Date(b.lastActiveAt || b.registeredAt).getTime() - new Date(a.lastActiveAt || a.registeredAt).getTime());
   }
 
-  // API 5: Admin Overview (Dashboard, Inventory, Users, Allocations, Claims)
-  app.get("/api/admin/overview", (req, res) => {
+  // API 5: Admin Stats (Inventory, Allocations, Claims, AdminWallet)
+  app.get("/api/admin/stats", (req, res) => {
     try {
-      const usersList = getConsolidatedUsers();
-      console.log(`[Admin Query /api/admin/overview] Returned ${usersList.length} users from database`);
-
       res.json({
+        success: true,
         inventory: dbState.vaultInventory,
-        users: usersList,
         allocations: dbState.allocations,
         claims: dbState.claims,
         adminWallet: dbState.adminWallet,
       });
     } catch (err: any) {
-      console.error("[Admin Query Error] /api/admin/overview:", err);
-      res.status(500).json({ error: err.message || "Failed to query database overview" });
+      console.error("[Admin Query Error] /api/admin/stats:", err);
+      res.status(500).json({ error: err.message || "Failed to query admin stats" });
     }
   });
 

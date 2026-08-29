@@ -62,11 +62,17 @@ export async function claimUserScratchersApi(
   return res.json();
 }
 
-export async function getAdminOverviewApi(): Promise<AdminOverviewResponse> {
-  const res = await fetch('/api/admin/overview');
+export async function getAdminStatsApi(): Promise<{
+  success: boolean;
+  inventory: ScratcherVaultInventory;
+  allocations: AllocationRecord[];
+  claims: ClaimEventLog[];
+  adminWallet: string | null;
+}> {
+  const res = await fetch('/api/admin/stats');
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to fetch admin overview');
+    throw new Error(errorData.error || 'Failed to fetch admin stats');
   }
   return res.json();
 }

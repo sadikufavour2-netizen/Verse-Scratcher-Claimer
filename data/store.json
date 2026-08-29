@@ -42,6 +42,16 @@
       "totalAllocated": 0,
       "totalClaimed": 0,
       "pendingClaim": 0
+    },
+    "@cryptokid": {
+      "id": "usr_1788010705773_244",
+      "telegramUsername": "@cryptokid",
+      "walletAddress": "0x3333333333333333333333333333333333333333",
+      "registeredAt": "2026-08-29T13:38:25.773Z",
+      "lastActiveAt": "2026-08-29T13:38:25.773Z",
+      "totalAllocated": 0,
+      "totalClaimed": 0,
+      "pendingClaim": 0
     }
   },
   "allocations": [],
